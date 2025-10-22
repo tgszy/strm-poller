@@ -13,7 +13,8 @@
 
 1. **克隆项目**
 ```bash
-git clone https://github.com/yourname/strm-poller.git
+# 克隆仓库
+git clone https://github.com/tgszy/strm-poller.git
 cd strm-poller
 ```
 
@@ -1025,8 +1026,13 @@ stats.print_stats(20)  # 显示前20个耗时函数
 docker build -t strm-poller:latest .
 
 # 2. 推送到镜像仓库
-docker tag strm-poller:latest ghcr.io/yourname/strm-poller:latest
-docker push ghcr.io/yourname/strm-poller:latest
+docker tag strm-poller:latest ghcr.io/tgszy/strm-poller:latest
+docker push ghcr.io/tgszy/strm-poller:latest
+
+# 或者直接构建多架构镜像
+docker buildx build --platform linux/amd64,linux/arm64 \
+  -t ghcr.io/tgszy/strm-poller:latest \
+  --push .
 
 # 3. 在生产环境部署
 docker run -d \
@@ -1036,7 +1042,7 @@ docker run -d \
   -v /opt/strm-poller/logs:/app/logs \
   -e ENV=production \
   --restart=unless-stopped \
-  ghcr.io/yourname/strm-poller:latest
+  ghcr.io/tgszy/strm-poller:latest
 ```
 
 ### 监控和日志

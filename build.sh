@@ -4,7 +4,7 @@
 set -e
 
 # 镜像名称和标签
-IMAGE_NAME="ghcr.io/yourname/strm-poller"
+IMAGE_NAME="ghcr.io/tgszy/strm-poller"
 VERSION="${1:-latest}"
 PLATFORMS="linux/amd64,linux/arm64"
 

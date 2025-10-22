@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   strm-poller:
-    image: ghcr.io/yourname/strm-poller:latest
+    image: ghcr.io/tgszy/strm-poller:latest
     container_name: strm-poller
     restart: unless-stopped
     ports:

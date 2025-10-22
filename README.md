@@ -34,7 +34,7 @@ docker run -d \
   -e PROXY_PORT=7890 \
   --memory=1g --memory-swap=1g \
   --restart=unless-stopped \
-  ghcr.io/yourname/strm-poller:latest
+  ghcr.io/tgszy/strm-poller:latest
 ```
 
 ### Docker Compose（推荐）
@@ -44,7 +44,7 @@ version: '3.8'
 
 services:
   strm-poller:
-    image: ghcr.io/yourname/strm-poller:latest
+    image: ghcr.io/tgszy/strm-poller:latest
     container_name: strm-poller
     ports:
       - "3456:3456"
@@ -225,7 +225,7 @@ environment:
 ### 环境搭建
 ```bash
 # 克隆项目
-git clone https://github.com/yourname/strm-poller.git
+git clone https://github.com/tgszy/strm-poller.git
 cd strm-poller
 
 # 创建虚拟环境
@@ -330,9 +330,9 @@ MIT License - 详见 [LICENSE](LICENSE) 文件
 
 ## 📞 支持
 
-- 💬 [GitHub Issues](https://github.com/yourname/strm-poller/issues)
-- 📧 邮箱: your-email@example.com
-- 💭 讨论区: [GitHub Discussions](https://github.com/yourname/strm-poller/discussions)
+- 💬 [GitHub Issues](https://github.com/tgszy/strm-poller/issues)
+- 📧 邮箱: tgszy@example.com
+- 💭 讨论区: [GitHub Discussions](https://github.com/tgszy/strm-poller/discussions)
 
 ---
 
