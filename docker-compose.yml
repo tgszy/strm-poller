@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  strm-poller:
+    image: ghcr.io/yourname/strm-poller:latest
+    container_name: strm-poller
+    restart: unless-stopped
+    ports:
+      - "3456:3456"
+    volumes:
+      - ./config:/config
+      - ./logs:/app/logs
+      - /mnt/user/aliyun:/src:ro
+      - /mnt/user/emby:/dst
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Shanghai
+      - MAX_MEMORY=1024
+      - PROXY_ENABLED=false
+      - PROXY_URL=
+    mem_limit: 1g
+    memswap_limit: 1g
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3456/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+      - "traefik.enable=false"
+
+  # 可选：自动更新容器
+  watchtower:
+    image: containrrr/watchtower
+    container_name: watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: --interval 86400 --label-enable --cleanup
+    labels:
+      - "com.centurylinklabs.watchtower.enable=false"

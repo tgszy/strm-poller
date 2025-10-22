@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STRM Poller - 飞牛NAS媒体整理</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        
+        .sidebar {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: white;
+            padding: 0;
+        }
+        
+        .sidebar .nav-link {
+            color: rgba(255, 255, 255, 0.8);
+            padding: 12px 20px;
+            border-radius: 0;
+            transition: all 0.3s ease;
+        }
+        
+        .sidebar .nav-link:hover,
+        .sidebar .nav-link.active {
+            color: white;
+            background-color: rgba(255, 255, 255, 0.1);
+            border-left: 4px solid #fff;
+        }
+        
+        .sidebar .nav-link i {
+            margin-right: 10px;
+            width: 20px;
+            text-align: center;
+        }
+        
+        .main-content {
+            padding: 20px;
+            min-height: 100vh;
+        }
+        
+        .header {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .card {
+            border: none;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            transition: transform 0.2s ease;
+        }
+        
+        .card:hover {
+            transform: translateY(-2px);
+        }
+        
+        .progress {
+            height: 8px;
+            border-radius: 4px;
+        }
+        
+        .status-badge {
+            font-size: 0.75rem;
+            padding: 4px 8px;
+            border-radius: 12px;
+        }
+        
+        .status-running {
+            background-color: #28a745;
+            color: white;
+        }
+        
+        .status-pending {
+            background-color: #ffc107;
+            color: #212529;
+        }
+        
+        .status-completed {
+            background-color: #17a2b8;
+            color: white;
+        }
+        
+        .status-failed {
+            background-color: #dc3545;
+            color: white;
+        }
+        
+        .status-paused {
+            background-color: #6c757d;
+            color: white;
+        }
+        
+        .log-terminal {
+            background-color: #1e1e1e;
+            color: #f8f8f2;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.85rem;
+            max-height: 300px;
+            overflow-y: auto;
+            border-radius: 8px;
+            padding: 15px;
+        }
+        
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 2px 0;
+        }
+        
+        .log-info {
+            color: #66d9ef;
+        }
+        
+        .log-success {
+            color: #a6e22e;
+        }
+        
+        .log-warning {
+            color: #fd971f;
+        }
+        
+        .log-error {
+            color: #f92672;
+            font-weight: bold;
+        }
+        
+        .drag-drop-zone {
+            border: 2px dashed #ccc;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        
+        .drag-drop-zone:hover,
+        .drag-drop-zone.dragover {
+            border-color: #667eea;
+            background-color: #f8f9ff;
+        }
+        
+        .scraper-item {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-left: 4px solid #667eea;
+            transition: all 0.3s ease;
+        }
+        
+        .scraper-item:hover {
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        
+        .scraper-item.disabled {
+            opacity: 0.6;
+            border-left-color: #ccc;
+        }
+        
+        .stats-card {
+            text-align: center;
+            padding: 20px;
+        }
+        
+        .stats-number {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #667eea;
+        }
+        
+        .stats-label {
+            color: #6c757d;
+            font-size: 0.9rem;
+            margin-top: 5px;
+        }
+        
+        @media (max-width: 768px) {
+            .sidebar {
+                min-height: auto;
+            }
+            
+            .main-content {
+                padding: 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <!-- 侧边栏 -->
+            <div class="col-md-3 col-lg-2 px-0">
+                <div class="sidebar">
+                    <div class="p-4">
+                        <h4 class="text-center mb-4">
+                            <i class="bi bi-server"></i> STRM Poller
+                        </h4>
+                    </div>
+                    <nav class="nav flex-column">
+                        <a class="nav-link active" href="#" data-page="dashboard">
+                            <i class="bi bi-speedometer2"></i> 仪表盘
+                        </a>
+                        <a class="nav-link" href="#" data-page="tasks">
+                            <i class="bi bi-list-task"></i> 任务管理
+                        </a>
+                        <a class="nav-link" href="#" data-page="scrapers">
+                            <i class="bi bi-search"></i> 刮削源
+                        </a>
+                        <a class="nav-link" href="#" data-page="settings">
+                            <i class="bi bi-gear"></i> 系统设置
+                        </a>
+                        <a class="nav-link" href="#" data-page="logs">
+                            <i class="bi bi-journal-text"></i> 日志查看
+                        </a>
+                    </nav>
+                </div>
+            </div>
+            
+            <!-- 主内容区 -->
+            <div class="col-md-9 col-lg-10">
+                <div class="main-content">
+                    <!-- 头部 -->
+                    <div class="header d-flex justify-content-between align-items-center">
+                        <div>
+                            <h2 id="page-title">仪表盘</h2>
+                            <p class="text-muted mb-0">飞牛NAS STRM文件自动整理服务</p>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-outline-primary" id="refresh-btn">
+                                <i class="bi bi-arrow-clockwise"></i> 刷新
+                            </button>
+                            <button class="btn btn-success" id="add-task-btn" data-bs-toggle="modal" data-bs-target="#taskModal">
+                                <i class="bi bi-plus-circle"></i> 新建任务
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- 页面内容 -->
+                    <div id="page-content">
+                        <!-- 仪表盘页面 -->
+                        <div id="dashboard-page" class="page-content">
+                            <div class="row">
+                                <div class="col-md-3 mb-4">
+                                    <div class="card stats-card">
+                                        <div class="stats-number" id="total-tasks">0</div>
+                                        <div class="stats-label">总任务数</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3 mb-4">
+                                    <div class="card stats-card">
+                                        <div class="stats-number" id="running-tasks">0</div>
+                                        <div class="stats-label">运行中</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3 mb-4">
+                                    <div class="card stats-card">
+                                        <div class="stats-number" id="completed-tasks">0</div>
+                                        <div class="stats-label">已完成</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3 mb-4">
+                                    <div class="card stats-card">
+                                        <div class="stats-number" id="failed-tasks">0</div>
+                                        <div class="stats-label">失败</div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="row">
+                                <div class="col-md-6 mb-4">
+                                    <div class="card">
+                                        <div class="card-header">
+                                            <h5 class="mb-0">
+                                                <i class="bi bi-cpu"></i> 系统状态
+                                            </h5>
+                                        </div>
+                                        <div class="card-body">
+                                            <div class="mb-3">
+                                                <div class="d-flex justify-content-between">
+                                                    <span>CPU使用率</span>
+                                                    <span id="cpu-usage">0%</span>
+                                                </div>
+                                                <div class="progress mt-1">
+                                                    <div class="progress-bar" id="cpu-progress" style="width: 0%"></div>
+                                                </div>
+                                            </div>
+                                            <div class="mb-3">
+                                                <div class="d-flex justify-content-between">
+                                                    <span>内存使用率</span>
+                                                    <span id="memory-usage">0%</span>
+                                                </div>
+                                                <div class="progress mt-1">
+                                                    <div class="progress-bar bg-info" id="memory-progress" style="width: 0%"></div>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <div class="d-flex justify-content-between">
+                                                    <span>磁盘使用率</span>
+                                                    <span id="disk-usage">0%</span>
+                                                </div>
+                                                <div class="progress mt-1">
+                                                    <div class="progress-bar bg-warning" id="disk-progress" style="width: 0%"></div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6 mb-4">
+                                    <div class="card">
+                                        <div class="card-header">
+                                            <h5 class="mb-0">
+                                                <i class="bi bi-activity"></i> 实时日志
+                                            </h5>
+                                        </div>
+                                        <div class="card-body">
+                                            <div class="log-terminal" id="log-terminal">
+                                                <div class="text-muted">等待日志...</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- 任务管理页面 -->
+                        <div id="tasks-page" class="page-content" style="display: none;">
+                            <div class="card">
+                                <div class="card-header d-flex justify-content-between align-items-center">
+                                    <h5 class="mb-0">
+                                        <i class="bi bi-list-task"></i> 任务列表
+                                    </h5>
+                                    <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#taskModal">
+                                        <i class="bi bi-plus"></i> 新建任务
+                                    </button>
+                                </div>
+                                <div class="card-body">
+                                    <div class="table-responsive">
+                                        <table class="table table-hover">
+                                            <thead>
+                                                <tr>
+                                                    <th>任务名称</th>
+                                                    <th>状态</th>
+                                                    <th>进度</th>
+                                                    <th>文件数</th>
+                                                    <th>创建时间</th>
+                                                    <th>操作</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="tasks-table-body">
+                                                <tr>
+                                                    <td colspan="6" class="text-center text-muted">加载中...</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- 刮削源页面 -->
+                        <div id="scrapers-page" class="page-content" style="display: none;">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h5 class="mb-0">
+                                        <i class="bi bi-search"></i> 刮削源配置
+                                    </h5>
+                                </div>
+                                <div class="card-body">
+                                    <div id="scrapers-list">
+                                        <div class="text-center text-muted">加载中...</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- 系统设置页面 -->
+                        <div id="settings-page" class="page-content" style="display: none;">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="card">
+                                        <div class="card-header">
+                                            <h5 class="mb-0">
+                                                <i class="bi bi-globe"></i> 代理设置
+                                            </h5>
+                                        </div>
+                                        <div class="card-body">
+                                            <form id="proxy-form">
+                                                <div class="mb-3">
+                                                    <label class="form-label">启用代理</label>
+                                                    <div class="form-check form-switch">
+                                                        <input class="form-check-input" type="checkbox" id="proxy-enabled">
+                                                        <label class="form-check-label" for="proxy-enabled">
+                                                            启用代理服务器
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label for="proxy-url" class="form-label">代理地址</label>
+                                                    <input type="text" class="form-control" id="proxy-url" 
+                                                           placeholder="http://user:pass@host:port 或 socks5://host:port">
+                                                    <div class="form-text">支持HTTP/HTTPS/SOCKS5代理</div>
+                                                </div>
+                                                <div class="d-flex gap-2">
+                                                    <button type="button" class="btn btn-outline-primary" id="test-proxy-btn">
+                                                        <i class="bi bi-wifi"></i> 测试连接
+                                                    </button>
+                                                    <button type="submit" class="btn btn-primary">
+                                                        <i class="bi bi-save"></i> 保存设置
+                                                    </button>
+                                                </div>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="card">
+                                        <div class="card-header">
+                                            <h5 class="mb-0">
+                                                <i class="bi bi-memory"></i> 系统设置
+                                            </h5>
+                                        </div>
+                                        <div class="card-body">
+                                            <form id="system-form">
+                                                <div class="mb-3">
+                                                    <label for="max-memory" class="form-label">内存限制 (MB)</label>
+                                                    <input type="number" class="form-control" id="max-memory" 
+                                                           value="1024" min="256" max="8192">
+                                                    <div class="form-text">设置容器最大内存使用量</div>
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label for="max-workers" class="form-label">最大工作线程数</label>
+                                                    <input type="number" class="form-control" id="max-workers" 
+                                                           value="4" min="1" max="16">
+                                                    <div class="form-text">同时处理的任务数量</div>
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label for="task-timeout" class="form-label">任务超时时间 (秒)</label>
+                                                    <input type="number" class="form-control" id="task-timeout" 
+                                                           value="3600" min="300" max="86400">
+                                                    <div class="form-text">单个任务的最大执行时间</div>
+                                                </div>
+                                                <button type="submit" class="btn btn-primary">
+                                                    <i class="bi bi-save"></i> 保存设置
+                                                </button>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- 日志页面 -->
+                        <div id="logs-page" class="page-content" style="display: none;">
+                            <div class="card">
+                                <div class="card-header d-flex justify-content-between align-items-center">
+                                    <h5 class="mb-0">
+                                        <i class="bi bi-journal-text"></i> 系统日志
+                                    </h5>
+                                    <div class="d-flex gap-2">
+                                        <button class="btn btn-sm btn-outline-secondary" id="clear-logs-btn">
+                                            <i class="bi bi-trash"></i> 清空日志
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-primary" id="export-logs-btn">
+                                            <i class="bi bi-download"></i> 导出日志
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="card-body">
+                                    <div class="log-terminal" id="full-log-terminal" style="max-height: 600px;">
+                                        <div class="text-muted">等待日志...</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 新建任务模态框 -->
+    <div class="modal fade" id="taskModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-plus-circle"></i> 新建任务
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="task-form">
+                        <div class="mb-3">
+                            <label for="task-name" class="form-label">任务名称</label>
+                            <input type="text" class="form-control" id="task-name" required>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="source-path" class="form-label">源路径</label>
+                                    <input type="text" class="form-control" id="source-path" 
+                                           placeholder="/mnt/user/aliyun" required>
+                                    <div class="form-text">STRM文件所在目录</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="destination-path" class="form-label">目标路径</label>
+                                    <input type="text" class="form-control" id="destination-path" 
+                                           placeholder="/mnt/user/emby" required>
+                                    <div class="form-text">整理后的媒体库目录</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="organize-strategy" class="form-label">整理策略</label>
+                            <select class="form-select" id="organize-strategy" required>
+                                <option value="category">分类别（电影/电视剧/动漫）</option>
+                                <option value="type">分类型（movie/tv/anime）</option>
+                                <option value="none">不整理（保持原结构）</option>
+                            </select>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" id="create-task-btn">
+                        <i class="bi bi-check-circle"></i> 创建任务
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 刮削源配置模态框 -->
+    <div class="modal fade" id="scraperConfigModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-gear"></i> 刮削源配置
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="scraper-config-form">
+                        <div class="mb-3">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="scraper-enabled">
+                                <label class="form-check-label" for="scraper-enabled">
+                                    启用此刮削源
+                                </label>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="scraper-priority" class="form-label">优先级</label>
+                            <input type="number" class="form-control" id="scraper-priority" 
+                                   min="0" max="100" value="0">
+                            <div class="form-text">数字越小优先级越高</div>
+                        </div>
+                        <div class="mb-3" id="api-key-group">
+                            <label for="scraper-api-key" class="form-label">API Key</label>
+                            <input type="password" class="form-control" id="scraper-api-key" 
+                                   placeholder="输入API密钥">
+                            <div class="form-text" id="api-key-help"></div>
+                        </div>
+                        <div class="mb-3" id="cookie-group" style="display: none;">
+                            <label for="scraper-cookie" class="form-label">Cookie</label>
+                            <textarea class="form-control" id="scraper-cookie" rows="3" 
+                                      placeholder="输入Cookie字符串"></textarea>
+                            <div class="form-text">选填，登录后获取的Cookie</div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="scraper-timeout" class="form-label">超时时间 (秒)</label>
+                                    <input type="number" class="form-control" id="scraper-timeout" 
+                                           min="5" max="300" value="30">
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="scraper-retry" class="form-label">重试次数</label>
+                                    <input type="number" class="form-control" id="scraper-retry" 
+                                           min="0" max="10" value="3">
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" id="save-scraper-config-btn">
+                        <i class="bi bi-save"></i> 保存配置
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="static/js/app.js"></script>
+</body>
+</html>
