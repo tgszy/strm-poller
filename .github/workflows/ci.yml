@@ -7,26 +7,36 @@ on:
     branches: [ master ]
 
 jobs:
+  # 测试作业 - 仅测试支持的Python版本
   test:
+    # 使用稳定的Ubuntu 20.04运行器
     runs-on: ubuntu-20.04
+    # 只指定明确支持的Python版本
     strategy:
       matrix:
-        # 明确指定支持的Python版本，不包括3.1
-        python-version: [3.9, 3.10, 3.11]
-      # 确保每个Python版本独立运行，一个失败不会取消其他版本
+        # 项目仅支持Python 3.9、3.10和3.11版本
+        python-version: [
+          '3.9',
+          '3.10',
+          '3.11'
+        ]
+      # 配置为不快速失败，确保所有Python版本都能运行测试
       fail-fast: false
 
     steps:
     - uses: actions/checkout@v3
     
     - name: Set up Python ${{ matrix.python-version }}
+      id: setup-python
       uses: actions/setup-python@v4
       with:
-        python-version: ${{ matrix.python-version }}
+        # 严格使用矩阵中指定的Python版本
+        python-version: "${{ matrix.python-version }}"
+        # 启用pip缓存以加快依赖安装
         cache: 'pip'
-        # 明确指定版本选择策略，避免任何版本推断问题
+        # 关闭最新版本检查，避免版本解析问题
         check-latest: false
-        # 确保使用稳定的版本，避免版本解析问题
+        # 明确指定x64架构
         architecture: 'x64'
     
     - name: Install dependencies
