@@ -22,55 +22,258 @@
 
 ### Docker运行（推荐）
 
+**Linux/macOS 环境**:
+
 ```bash
 docker run -d \
   --name=strm-poller \
   -p 3456:3456 \
+  # 配置目录：包含数据库、配置文件和日志
   -v /mnt/user/appdata/strm-poller:/config \
+  # 源目录：包含.strm文件的目录，建议设置为只读
   -v /mnt/user/aliyun:/src:ro \
+  # 目标目录：整理后的媒体文件将存放在这里
   -v /mnt/user/emby:/dst \
+  # 基本环境变量配置
   -e PUID=1000 -e PGID=1000 -e TZ=Asia/Shanghai \
+  # 内存限制
+  -e MAX_MEMORY=1024 \
+  # 代理设置（如需使用）
   -e PROXY_ENABLED=true \
   -e PROXY_TYPE=http \
   -e PROXY_HOST=192.168.1.100 \
   -e PROXY_PORT=7890 \
+  # 容器内存限制（双重保障）
   --memory=1g --memory-swap=1g \
   --restart=unless-stopped \
   ghcr.io/tgszy/strm-poller:latest
 ```
 
-### Docker Compose（推荐）
+**Windows PowerShell 环境**:
 
-使用项目根目录的 docker-compose.yml 文件：
+```powershell
+docker run -d `
+  --name=strm-poller `
+  -p 3456:3456 `
+  -v ${pwd}\appdata\strm-poller:/config `
+  -v D:\path\to\aliyun:/src:ro `
+  -v D:\path\to\emby:/dst `
+  -e PUID=1000 -e PGID=1000 -e TZ=Asia/Shanghai `
+  -e MAX_MEMORY=1024 `
+  -e PROXY_ENABLED=true `
+  -e PROXY_TYPE=http `
+  -e PROXY_HOST=192.168.1.100 `
+  -e PROXY_PORT=7890 `
+  --memory=1g --memory-swap=1g `
+  --restart=unless-stopped `
+  ghcr.io/tgszy/strm-poller:latest
+```
+
+### Docker Compose 方式
+
+使用项目根目录的 docker-compose.yml 文件，或者创建以下内容的文件：
+
+```yaml
+version: '3.8'
+
+services:
+  strm-poller:
+    image: ghcr.io/tgszy/strm-poller:latest
+    container_name: strm-poller
+    restart: unless-stopped
+    ports:
+      - "3456:3456"
+    volumes:
+      # 配置目录：包含数据库、配置文件和日志
+      # Windows路径示例: - C:\path\to\config:/config
+      - ./config:/config
+      # 源目录：包含.strm文件的目录，建议设置为只读
+      # Windows路径示例: - C:\path\to\src:/src:ro
+      - /path/to/src:/src:ro
+      # 目标目录：整理后的媒体文件将存放在这里
+      # Windows路径示例: - C:\path\to\dst:/dst
+      - /path/to/dst:/dst
+      # 可自定义添加更多源目录和目标目录映射
+      # 例如：
+      # - ./other_source:/src2:ro
+      # - ./other_destination:/dst2
+    environment:
+      # 用户权限设置
+      - PUID=1000
+      - PGID=1000
+      # 时区设置
+      - TZ=Asia/Shanghai
+      # 内存限制 (MB)
+      - MAX_MEMORY=1024
+      # 代理设置
+      - PROXY_ENABLED=false
+      - PROXY_URL=
+      # 日志级别
+      - LOG_LEVEL=INFO
+    # 容器内存限制
+    mem_limit: 1g
+    memswap_limit: 1g
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3456/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+```
+
+然后运行：
 ```bash
 docker-compose up -d
 ```
 
+## 路径映射详解
+
+| 本地路径 | 容器路径 | 说明 | 建议权限 |
+|---------|---------|------|--------|
+| `./config` | `/config` | 配置文件、数据库和日志目录 | 读写 |
+| `/path/to/src` | `/src` | 包含.strm文件的源目录 | 只读 (`:ro`) |
+| `/path/to/dst` | `/dst` | 整理后的媒体文件目标目录 | 读写 |
+
+### 自定义多路径映射
+
+您可以根据需要映射多个源目录和目标目录：
+
+**Docker run 示例**：
+```bash
+docker run -d \
+  --name strm-poller \
+  -p 3456:3456 \
+  -v ./config:/config \
+  -v /path/to/source1:/src:ro \
+  -v /path/to/source2:/src2:ro \
+  -v /path/to/source3:/src3:ro \
+  -v /path/to/dest1:/dst \
+  -v /path/to/dest2:/dst2 \
+  -e PUID=1000 \
+  -e PGID=1000 \
+  -e TZ=Asia/Shanghai \
+  --restart unless-stopped \
+  ghcr.io/tgszy/strm-poller:latest
+```
+
+## 环境变量配置
+
+| 环境变量 | 默认值 | 说明 |
+|---------|-------|------|
+| `PUID` | `1000` | 用户ID，用于文件权限控制 |
+| `PGID` | `1000` | 组ID，用于文件权限控制 |
+| `TZ` | `Asia/Shanghai` | 时区设置 |
+| `MAX_MEMORY` | `1024` | 内存限制（MB） |
+| `PROXY_ENABLED` | `false` | 是否启用代理 |
+| `PROXY_URL` | - | 代理URL，格式：http://user:pass@host:port 或 socks5://host:port |
+| `LOG_LEVEL` | `INFO` | 日志级别：DEBUG, INFO, WARNING, ERROR |
+| `CONFIG_PATH` | `/config` | 配置文件路径（可自定义） |
+| `SRC_PATH` | `/src` | 默认源目录路径（可自定义） |
+| `DST_PATH` | `/dst` | 默认目标目录路径（可自定义） |
+| `WATCH_DEBOUNCE_SECONDS` | `1.0` | 文件监控防抖时间（秒） |
+
+## 访问后台页面
+
+容器启动成功后，可以通过以下地址访问后台页面：
+```
+http://localhost:3456
+```
+
+如果在远程服务器或NAS上运行，可以使用对应设备的IP地址代替 `localhost`。
+
+## 检查运行状态
+
+### Docker run 方式
+```bash
+# 查看容器状态
+docker ps -a --filter "name=strm-poller"
+
+# 查看容器日志
+docker logs strm-poller
+
+# 实时查看日志
+docker logs -f strm-poller
+
+# 停止容器
+docker stop strm-poller
+
+# 启动容器
+docker start strm-poller
+```
+
+### Docker Compose 方式
+```bash
+# 查看状态
+docker-compose ps
+
+# 查看日志
+docker-compose logs
+
+# 实时查看日志
+docker-compose logs -f
+
+# 停止服务
+docker-compose down
+
+# 启动服务
+docker-compose up -d
+```
+
+## 详细文档
+
+- **Docker Run 命令示例**：[docs/docker_run_examples.md](docs/docker_run_examples.md)
+- **Windows 环境安装指南**：[docs/windows_setup_guide.md](docs/windows_setup_guide.md)
+- **安装指南**：[docs/INSTALLATION.md](docs/INSTALLATION.md)
+- **配置示例**：[config.example.yaml](config.example.yaml)
+
 ## 📁 路径映射建议
+
+### 重要路径说明
+
+| 容器内路径 | 用途 | 建议主机路径 | 权限 |
+|------------|------|------------|------|
+| `/config` | 配置文件、数据库和日志 | `/mnt/user/appdata/strm-poller` | 读写 |
+| `/src` | 源.strm文件目录 | `/mnt/user/aliyun` 或 `/mnt/user/aliyun/strm_unsort` | 只读 |
+| `/dst` | 整理后的媒体库 | `/mnt/user/emby/library` 或 `/mnt/user/emby` | 读写 |
+
+### 推荐目录结构
 
 ```
 /mnt/user/
-├─ appdata/strm-poller/   → 配置、数据库、日志
-├─ aliyun/strm_unsort/    → 源.strm文件（只读）
-└─ emby/library/          → 整理后媒体库
+├─ appdata/strm-poller/   → 配置目录（数据库、配置文件、日志）
+├─ aliyun/                → 源目录（包含.strm文件）
+│   └─ strm_unsort/       → 未分类的.strm文件
+└─ emby/                  → 目标目录（整理后的媒体库）
+    └─ library/           → Emby媒体库根目录
 ```
+
+### 注意事项
+
+1. **目录权限**：确保PUID和PGID对应的用户对挂载目录有适当的访问权限
+2. **源目录**：建议设置为只读(`:ro`)以防止意外修改
+3. **目标目录**：需要读写权限以创建整理后的媒体文件结构
+4. **配置目录**：必须有读写权限，用于存储数据库、日志和用户配置
 
 ## ⚙️ 环境变量配置
 
 | 变量名 | 默认值 | 说明 |
 |--------|--------|------|
-| `PUID` | 1000 | 用户ID |
-| `PGID` | 1000 | 用户组ID |
-| `TZ` | Asia/Shanghai | 时区 |
+| `PUID` | 1000 | 用户ID，确保与挂载目录权限匹配 |
+| `PGID` | 1000 | 用户组ID，确保与挂载目录权限匹配 |
+| `TZ` | Asia/Shanghai | 时区设置 |
 | `PROXY_ENABLED` | false | 是否启用代理 |
 | `PROXY_TYPE` | http | 代理类型: http/https/socks5 |
 | `PROXY_HOST` | localhost | 代理服务器地址 |
 | `PROXY_PORT` | 8080 | 代理端口 |
 | `PROXY_USERNAME` | - | 代理用户名（可选） |
 | `PROXY_PASSWORD` | - | 代理密码（可选） |
-| `MAX_MEMORY_MB` | 1024 | 内存限制（MB） |
-| `SCRAPER_ORDER` | tmdb,douban,bangumi,imdb,tvdb | 刮削源优先级 |
-| `LOG_LEVEL` | INFO | 日志级别 |
+| `PROXY_URL` | - | 完整代理URL（覆盖上述代理设置） |
+| `MAX_MEMORY` 或 `MAX_MEMORY_MB` | 1024 | 内存限制（MB） |
+| `SCRAPER_ORDER` | tmdb,douban,bangumi,imdb,tvdb | 刮削源优先级顺序 |
+| `LOG_LEVEL` | INFO | 日志级别：DEBUG, INFO, WARNING, ERROR |
+| `WATCH_DEBOUNCE_SECONDS` | 1.0 | 文件监控事件防抖时间 |
+| `WATCH_RECURSIVE` | true | 是否递归监控子目录 |
+| `ORGANIZE_STRATEGY` | category | 文件整理策略：category, type, none
 
 ## 🔑 刮削源配置
 

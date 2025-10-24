@@ -8,10 +8,10 @@ class Settings(BaseSettings):
     port: int = 3456
     debug: bool = False
     
-    # 路径配置
-    config_path: str = "/config"
-    src_path: str = "/src"
-    dst_path: str = "/dst"
+    # 路径配置 - 支持从环境变量读取，增加灵活性
+    config_path: str = os.environ.get("CONFIG_PATH", "/config")
+    src_path: str = os.environ.get("SRC_PATH", "/src")
+    dst_path: str = os.environ.get("DST_PATH", "/dst")
     
     # 代理配置
     proxy_enabled: bool = False
@@ -43,14 +43,14 @@ class Settings(BaseSettings):
     tvdb_api_key: Optional[str] = None
     
     # 系统配置
-    max_memory_mb: int = 1024  # 内存限制，单位MB
+    max_memory_mb: int = int(os.environ.get("MAX_MEMORY", "1024"))  # 内存限制，单位MB
     max_workers: int = 4  # 最大工作线程数
     task_timeout: int = 3600  # 任务超时时间，单位秒
     retry_count: int = 3  # 重试次数
     retry_delay: int = 3600  # 重试延迟，单位秒
     
     # 文件监控配置
-    watch_debounce_seconds: float = 1.0  # 文件事件防抖时间
+    watch_debounce_seconds: float = float(os.environ.get("WATCH_DEBOUNCE_SECONDS", "1.0"))  # 文件事件防抖时间
     watch_recursive: bool = True  # 是否递归监控
     
     # 整理策略
@@ -58,8 +58,8 @@ class Settings(BaseSettings):
     rename_template: str = "{title} ({year}){extension}"
     
     # 数据库配置
-    # SQLite配置
-    sqlite_path: str = f"{config_path}/strm-poller.db"
+    # SQLite配置 - 默认值，将在__init__中根据config_path更新
+    sqlite_path: str = "/config/strm-poller.db"
     
     # PostgreSQL配置
     postgres_enabled: bool = False
@@ -78,8 +78,8 @@ class Settings(BaseSettings):
             return f"sqlite:///{self.sqlite_path}"
     
     # 日志配置
-    log_level: str = "INFO"
-    log_file: str = f"{config_path}/logs/strm-poller.log"
+    log_level: str = os.environ.get("LOG_LEVEL", "INFO")
+    log_file: str = "/config/logs/strm-poller.log"  # 默认值，将在__init__中更新
     log_max_size: int = 10 * 1024 * 1024  # 10MB
     log_backup_count: int = 5
     
@@ -91,6 +91,21 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = False
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # 确保路径使用正确的分隔符，支持Windows和Linux环境下的路径处理
+        self.config_path = os.path.normpath(self.config_path)
+        self.src_path = os.path.normpath(self.src_path)
+        self.dst_path = os.path.normpath(self.dst_path)
+        
+        # 更新依赖于config_path的路径，确保路径正确拼接
+        self.sqlite_path = os.path.join(self.config_path, "strm-poller.db")
+        
+        # 确保日志目录存在，自动创建必要的目录结构
+        log_dir = os.path.join(self.config_path, "logs")
+        os.makedirs(log_dir, exist_ok=True)
+        self.log_file = os.path.join(log_dir, "strm-poller.log")
 
 # 全局设置实例
 settings = Settings()

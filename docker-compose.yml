@@ -8,17 +8,33 @@ services:
     ports:
       - "3456:3456"
     volumes:
+      # 配置目录：包含数据库、配置文件和日志
+      # Windows路径示例: - C:\path\to\config:/config
       - ./config:/config
-      - ./logs:/app/logs
+      # 源目录：包含.strm文件的目录，建议设置为只读
+      # Windows路径示例: - C:\path\to\src:/src:ro
       - /mnt/user/aliyun:/src:ro
+      # 目标目录：整理后的媒体文件将存放在这里
+      # Windows路径示例: - C:\path\to\dst:/dst
       - /mnt/user/emby:/dst
+      # 可自定义添加更多源目录和目标目录映射
+      # 例如：
+      # - ./other_source:/src2:ro
+      # - ./other_destination:/dst2
     environment:
+      # 用户权限设置
       - PUID=1000
       - PGID=1000
+      # 时区设置
       - TZ=Asia/Shanghai
+      # 内存限制 (MB)
       - MAX_MEMORY=1024
+      # 代理设置
       - PROXY_ENABLED=false
       - PROXY_URL=
+      # 日志级别
+      - LOG_LEVEL=INFO
+    # 容器内存限制
     mem_limit: 1g
     memswap_limit: 1g
     healthcheck:
