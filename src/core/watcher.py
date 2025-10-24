@@ -196,12 +196,12 @@ class STRMFileProcessor:
     
     async def start_watching(self, watch_paths: list):
         """开始监控指定路径"""
-        # 添加监控路径
+        # 先启动监控器（初始化observer）
+        await self.watcher.start()
+        
+        # 然后添加监控路径
         for path in watch_paths:
             self.watcher.add_watch_path(path, self.process_strm_file)
-        
-        # 启动监控器
-        await self.watcher.start()
     
     async def stop_watching(self):
         """停止监控"""

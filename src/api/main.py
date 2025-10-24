@@ -163,12 +163,33 @@ async def shutdown_event():
 @app.get("/")
 async def root():
     """根路径，返回WebUI"""
-    static_dir = Path(__file__).parent.parent / "static"
-    index_path = static_dir / "index.html"
-    if index_path.exists():
-        return HTMLResponse(content=index_path.read_text(encoding="utf-8"))
-    else:
-        return {"message": "STRM Poller API", "version": "3.0.0", "error": "WebUI not found"}
+    # 尝试多个可能的静态文件路径，适应不同环境
+    possible_paths = [
+        Path(__file__).parent.parent / "static" / "index.html",  # 开发环境路径
+        Path("/src/static/index.html"),  # Docker容器内路径
+    ]
+    
+    # 检查所有可能的路径
+    for index_path in possible_paths:
+        if index_path.exists():
+            try:
+                content = index_path.read_text(encoding="utf-8")
+                logger.info(f"成功加载WebUI: {index_path}")
+                return HTMLResponse(content=content)
+            except Exception as e:
+                logger.error(f"读取WebUI文件失败 {index_path}: {e}")
+    
+    # 所有路径都失败，返回详细错误信息
+    logger.error("WebUI文件未找到")
+    return JSONResponse(
+        status_code=503,
+        content={
+            "message": "STRM Poller API", 
+            "version": "3.0.0", 
+            "error": "WebUI not found",
+            "searched_paths": [str(p) for p in possible_paths]
+        }
+    )
 
 @app.get("/api/health")
 async def health_check():
