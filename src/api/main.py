@@ -91,7 +91,8 @@ async def startup_event():
     """应用启动事件"""
     global proxy_manager, memory_manager, resource_monitor
     
-    logger.info("STRM Poller 服务启动")
+    logger.info(f"STRM Poller 服务启动 - 监听地址: {settings.host}:{settings.port}")
+    logger.info(f"允许访问来源: {settings.host == '0.0.0.0' and '所有网络接口' or '仅本地'}")
     
     # 初始化内存管理器
     memory_manager = MemoryManager(settings.max_memory_mb)
@@ -167,27 +168,41 @@ async def root():
     possible_paths = [
         Path(__file__).parent.parent / "static" / "index.html",  # 开发环境路径
         Path("/src/static/index.html"),  # Docker容器内路径
+        Path("/app/src/static/index.html"),  # 另一个可能的Docker容器路径
+        Path("/app/static/index.html"),  # 另一个可能的容器路径
     ]
     
-    # 检查所有可能的路径
+    # 记录所有可能的路径存在状态
     for index_path in possible_paths:
-        if index_path.exists():
+        exists = index_path.exists()
+        logger.info(f"检查WebUI路径: {index_path} - {'存在' if exists else '不存在'}")
+        
+        if exists:
             try:
-                content = index_path.read_text(encoding="utf-8")
-                logger.info(f"成功加载WebUI: {index_path}")
-                return HTMLResponse(content=content)
+                # 检查文件权限
+                if os.access(index_path, os.R_OK):
+                    content = index_path.read_text(encoding="utf-8")
+                    logger.info(f"成功加载WebUI: {index_path}")
+                    return HTMLResponse(content=content)
+                else:
+                    logger.error(f"无权限读取WebUI文件: {index_path}")
             except Exception as e:
                 logger.error(f"读取WebUI文件失败 {index_path}: {e}")
     
     # 所有路径都失败，返回详细错误信息
-    logger.error("WebUI文件未找到")
+    logger.error("WebUI文件未找到或无法访问")
     return JSONResponse(
         status_code=503,
         content={
             "message": "STRM Poller API", 
             "version": "3.0.0", 
-            "error": "WebUI not found",
-            "searched_paths": [str(p) for p in possible_paths]
+            "error": "WebUI not found or inaccessible",
+            "searched_paths": [str(p) for p in possible_paths],
+            "server_info": {
+                "host": settings.host,
+                "port": settings.port,
+                "debug": settings.debug
+            }
         }
     )
 
@@ -508,4 +523,14 @@ async def websocket_endpoint(websocket: WebSocket):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host=settings.host, port=settings.port)
+    
+    logger.info(f"使用uvicorn启动应用: host={settings.host}, port={settings.port}")
+    
+    # 显式配置uvicorn参数以确保正确绑定所有网络接口
+    uvicorn.run(
+        app,
+        host=settings.host,
+        port=settings.port,
+        log_level="info",
+        access_log=True  # 启用访问日志以帮助调试连接问题
+    )
