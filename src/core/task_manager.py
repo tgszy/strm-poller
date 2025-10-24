@@ -324,13 +324,13 @@ class TaskWorker:
                 self.task.progress = 100.0
                 
                 # 发送任务完成通知
-                    asyncio.create_task(
-                        notification_manager.notify(
-                            title=f"任务完成: {self.task.name}",
-                            message=f"任务ID: {self.task.id}\n处理文件数: {self.processed_count}\n失败文件数: {self.failed_count}\n耗时: {datetime.now() - self.task.started_at}",
-                            event_type=NotificationEvents.TASK_COMPLETED
-                        )
+                asyncio.create_task(
+                    notification_manager.notify(
+                        title=f"任务完成: {self.task.name}",
+                        message=f"任务ID: {self.task.id}\n处理文件数: {self.processed_count}\n失败文件数: {self.failed_count}\n耗时: {datetime.now() - self.task.started_at}",
+                        event_type=NotificationEvents.TASK_COMPLETED
                     )
+                )
             else:
                 self.task.status = "paused"
             
