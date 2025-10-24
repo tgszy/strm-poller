@@ -3,7 +3,7 @@ import aiohttp
 import resource
 import psutil
 import logging
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, List
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
