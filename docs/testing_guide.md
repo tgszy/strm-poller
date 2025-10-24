@@ -1,5 +1,102 @@
 # 测试运行状态指南
 
+## 常见问题及解决方案
+
+### 问题1: GitHub Container Registry访问被拒绝
+
+**错误信息示例：**
+```
+strm-poller Error Head "https://ghcr.io/v2/tgszy/strm-poller/manifests/latest": denied
+Error response from daemon: Head "https://ghcr.io/v2/tgszy/strm-poller/manifests/latest": denied
+```
+
+**解决方案：**
+1. 我们已将 `docker-compose.yml` 中的镜像源配置修改为使用本地构建：
+   ```yaml
+   build: .
+   ```
+   这样会使用项目根目录中的 Dockerfile 本地构建镜像，而不是尝试从 GitHub Container Registry 拉取。
+
+2. 您也可以尝试使用 Docker Hub 上的镜像（如果有）：
+   ```yaml
+   image: tgszy/strm-poller:latest
+   ```
+
+### 问题2: docker-compose.yml中version属性过时
+
+**错误信息示例：**
+```
+/vol1/1000/strm-paller/docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion
+```
+
+**解决方案：**
+- 我们已从 `docker-compose.yml` 中移除了过时的 `version` 属性，这不会影响容器的正常运行。
+
+## 测试运行方法
+
+### 方法一：使用docker-compose运行（推荐）
+
+1. 确保您已修改 `docker-compose.yml` 文件，将镜像源配置为本地构建或可用的镜像源。
+
+2. 在项目根目录执行以下命令：
+   ```bash
+   # 构建并启动容器
+   docker-compose up -d
+   
+   # 查看容器运行状态
+   docker-compose ps
+   
+   # 查看日志
+   docker-compose logs -f
+   ```
+
+### 方法二：使用docker run命令运行
+
+```bash
+# 构建镜像
+cd /path/to/strm-poller
+ docker build -t strm-poller:local .
+
+# 运行容器
+ docker run -d \
+   --name strm-poller \
+   -p 3456:3456 \
+   -v ./config:/config \
+   -v /path/to/src:/src:ro \
+   -v /path/to/dst:/dst \
+   -e PUID=1000 \
+   -e PGID=1000 \
+   -e TZ=Asia/Shanghai \
+   strm-poller:local
+```
+
+## 验证服务运行状态
+
+1. 检查容器是否正常启动：
+   ```bash
+   docker ps | grep strm-poller
+   ```
+
+2. 访问健康检查端点验证服务正常运行：
+   ```bash
+   curl http://localhost:3456/api/health
+   ```
+   正常情况下应返回包含服务健康状态的JSON响应。
+
+3. 检查应用日志中是否有错误信息：
+   ```bash
+   docker logs strm-poller
+   ```
+
+## 故障排除
+
+如果遇到路径映射问题，请确保：
+1. 对于Windows系统，使用正确的路径格式（例如：`C:\path\to\folder`）
+2. 确认用户有权限访问映射的目录
+3. 检查目录权限设置是否正确
+
+如果服务启动失败，请查看详细日志以获取更多信息。
+
 本文档提供了详细的测试步骤和命令示例，用于验证使用 `docker run` 和 `docker-compose` 两种方式运行 strm-poller 项目的状态。
 
 ## 目录

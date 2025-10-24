@@ -1,8 +1,9 @@
-version: '3.8'
-
 services:
   strm-poller:
-    image: ghcr.io/tgszy/strm-poller:latest
+    # 使用本地构建的镜像替代GitHub Container Registry
+    build: .
+    # 如果需要使用其他镜像源，可以取消下面这行注释并修改为相应的镜像地址
+    # image: tgszy/strm-poller:latest
     container_name: strm-poller
     restart: unless-stopped
     ports:
