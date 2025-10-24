@@ -2,7 +2,8 @@ name: Docker Build and Push
 
 on:
   push:
-    branches: [ master ]
+    branches:
+      - master
     # 当有版本标签推送时也构建
     tags:
       - 'v*.*.*'
@@ -22,6 +23,7 @@ jobs:
         driver: docker
         driver-opts:
           - image=moby/buildkit:master
+    
     - name: Docker info
       run: docker info
     
@@ -52,6 +54,3 @@ jobs:
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
-        # 增加重试机制和超时设置
-        retry: 2
-        timeout: 60m
