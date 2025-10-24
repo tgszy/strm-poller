@@ -3,7 +3,7 @@ import os
 import shutil
 import re
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from datetime import datetime
 from .database import get_db, Task, FileRecord
 from .logger import logger

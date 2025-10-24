@@ -1,6 +1,6 @@
 import asyncio
 import json
-from typing import Dict, Any, Set
+from typing import Dict, Any, Set, List
 from datetime import datetime
 from ..core.logger import logger
 from ..core.database import get_db, Task, FileRecord

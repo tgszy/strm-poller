@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler, FileCreatedEvent, FileModifiedEvent, FileMovedEvent
-from typing import Set, Callable, Optional
+from typing import Set, Callable, Optional, List
 import time
 from .logger import logger
 from .config import settings

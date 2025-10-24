@@ -1,4 +1,4 @@
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import aiohttp
 import asyncio
 from bs4 import BeautifulSoup
