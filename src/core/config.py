@@ -1,5 +1,5 @@
 from pydantic import BaseSettings
-from typing import Optional, List
+from typing import Optional, List, Dict
 import os
 
 class Settings(BaseSettings):
@@ -56,6 +56,37 @@ class Settings(BaseSettings):
     # 整理策略
     organize_strategy: str = "category"  # category, type, none
     rename_template: str = "{title} ({year}){extension}"
+    # 二级分类配置
+    enable_subcategory: bool = True
+    subcategory_map: Dict[str, Dict[str, str]] = {
+        "movie": {
+            "Action": "动作",
+            "Comedy": "喜剧",
+            "Drama": "剧情",
+            "Horror": "恐怖",
+            "Sci-Fi": "科幻",
+            "Fantasy": "奇幻",
+            "Romance": "爱情"
+        },
+        "tv": {
+            "Series": "剧集",
+            "Anime": "动画",
+            "Documentary": "纪录片",
+            "Reality": "真人秀"
+        }
+    }
+    
+    # 通知配置
+    # 微信企业机器人配置
+    notify_wechat_enabled: bool = False
+    notify_wechat_webhook_url: Optional[str] = None
+    notify_wechat_events: List[str] = []
+    
+    # Telegram配置
+    notify_telegram_enabled: bool = False
+    notify_telegram_bot_token: Optional[str] = None
+    notify_telegram_chat_id: Optional[str] = None
+    notify_telegram_events: List[str] = []
     
     # 数据库配置
     # SQLite配置 - 默认值，将在__init__中根据config_path更新

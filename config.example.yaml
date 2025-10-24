@@ -93,6 +93,45 @@ organize:
   strategy: "category"
   # 重命名模板
   rename_template: "{title} ({year}){extension}"
+  # 是否启用二级分类
+  enable_subcategory: true
+  # 二级分类映射
+  subcategory_map:
+    movie:
+      Action: "动作"
+      Comedy: "喜剧"
+      Drama: "剧情"
+      Horror: "恐怖"
+      Sci-Fi: "科幻"
+      Fantasy: "奇幻"
+      Romance: "爱情"
+    tv:
+      Series: "剧集"
+      Anime: "动画"
+      Documentary: "纪录片"
+      Reality: "真人秀"
+
+# 通知配置
+notification:
+  # 微信企业机器人配置
+  wechat:
+    # 是否启用
+    enabled: false
+    # 企业机器人webhook地址
+    webhook_url: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx"
+    # 通知事件范围，可选值：all, task_started, task_completed, task_failed, file_processed, file_failed, system_started, system_error
+    events: ["task_started", "task_completed", "task_failed"]
+  
+  # Telegram配置
+  telegram:
+    # 是否启用
+    enabled: false
+    # Telegram机器人token
+    bot_token: "xxx:xxx"
+    # 聊天ID
+    chat_id: "xxx"
+    # 通知事件范围，可选值：all, task_started, task_completed, task_failed, file_processed, file_failed, system_started, system_error
+    events: ["task_started", "task_completed", "task_failed"]
 
 # 数据库配置
 database:

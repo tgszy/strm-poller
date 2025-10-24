@@ -1,6 +1,7 @@
 import asyncio
 import os
 import shutil
+import re
 from pathlib import Path
 from typing import Optional, Dict, Any
 from datetime import datetime
@@ -8,6 +9,7 @@ from .database import get_db, Task, FileRecord
 from .logger import logger
 from .config import settings
 from .scrapers import ScraperManager
+from .notification import notification_manager, NotificationEvents
 import json
 
 class TaskManager:
@@ -128,6 +130,16 @@ class TaskManager:
             asyncio.create_task(task_worker.execute())
             
             logger.info(f"启动任务成功: {task.name} (ID: {task_id})")
+            
+            # 发送任务开始通知
+            asyncio.create_task(
+                notification_manager.notify(
+                    title=f"任务开始: {task.name}",
+                    message=f"任务ID: {task_id}\n源路径: {task.source_path}\n目标路径: {task.destination_path}\n整理策略: {task.organize_strategy}",
+                    event_type=NotificationEvents.TASK_STARTED
+                )
+            )
+            
             return True
             
         except Exception as e:
@@ -295,12 +307,30 @@ class TaskWorker:
                     )
                     db.add(file_record)
                     db.commit()
+                    
+                    # 发送文件处理失败通知
+                    asyncio.create_task(
+                        notification_manager.notify(
+                            title=f"文件处理失败: {os.path.basename(strm_file)}",
+                            message=f"文件路径: {strm_file}\n错误信息: {str(e)}\n任务ID: {self.task.id}",
+                            event_type=NotificationEvents.FILE_FAILED
+                        )
+                    )
             
             # 更新任务状态
             if self.running:
                 self.task.status = "completed"
                 self.task.completed_at = datetime.now()
                 self.task.progress = 100.0
+                
+                # 发送任务完成通知
+                    asyncio.create_task(
+                        notification_manager.notify(
+                            title=f"任务完成: {self.task.name}",
+                            message=f"任务ID: {self.task.id}\n处理文件数: {self.processed_count}\n失败文件数: {self.failed_count}\n耗时: {datetime.now() - self.task.started_at}",
+                            event_type=NotificationEvents.TASK_COMPLETED
+                        )
+                    )
             else:
                 self.task.status = "paused"
             
@@ -313,6 +343,15 @@ class TaskWorker:
             self.task.status = "failed"
             self.task.error_message = str(e)
             db.commit()
+            
+            # 发送任务失败通知
+            asyncio.create_task(
+                notification_manager.notify(
+                    title=f"任务失败: {self.task.name}",
+                    message=f"任务ID: {self.task.id}\n错误信息: {str(e)}\n已处理文件数: {self.processed_count}",
+                    event_type=NotificationEvents.TASK_FAILED
+                )
+            )
             
         finally:
             db.close()
@@ -372,6 +411,15 @@ class TaskWorker:
         db.add(file_record)
         
         logger.info(f"STRM文件处理完成: {strm_file} -> {destination_path}")
+        
+        # 发送文件处理成功通知
+        asyncio.create_task(
+            notification_manager.notify(
+                title=f"文件处理成功: {os.path.basename(strm_file)}",
+                message=f"原路径: {strm_file}\n目标路径: {destination_path}\n媒体标题: {scraped_data.get('title')}\n年份: {scraped_data.get('year')}",
+                event_type=NotificationEvents.FILE_PROCESSED
+            )
+        )
     
     def _extract_media_info(self, file_name: str) -> dict:
         """从文件名提取媒体信息"""
@@ -410,15 +458,26 @@ class TaskWorker:
             # 根据刮削数据创建目录结构
             title = scraped_data.get('title', 'Unknown')
             year = scraped_data.get('year', '')
+            media_type = scraped_data.get('type', 'movie')
             
+            # 构建基本目录路径
             if self.task.organize_strategy == "category":
                 # 分类别整理
-                category = self._get_category(scraped_data.get('type', 'movie'))
-                dest_dir = os.path.join(self.task.destination_path, category, f"{title} ({year})")
+                category = self._get_category(media_type)
+                base_dir = os.path.join(self.task.destination_path, category)
             else:
                 # 分类型整理
-                media_type = scraped_data.get('type', 'movie')
-                dest_dir = os.path.join(self.task.destination_path, media_type, f"{title} ({year})")
+                base_dir = os.path.join(self.task.destination_path, media_type)
+            
+            # 添加二级分类（如果启用）
+            dest_dir = base_dir
+            if settings.enable_subcategory:
+                subcategory = self._get_subcategory(scraped_data, media_type)
+                if subcategory:
+                    dest_dir = os.path.join(base_dir, subcategory)
+            
+            # 添加标题和年份目录
+            dest_dir = os.path.join(dest_dir, f"{title} ({year})")
             
             os.makedirs(dest_dir, exist_ok=True)
             dest_file = os.path.join(dest_dir, os.path.basename(source_file))
@@ -427,6 +486,27 @@ class TaskWorker:
         shutil.copy2(source_file, dest_file)
         
         return dest_file
+    
+    def _get_subcategory(self, scraped_data: dict, media_type: str) -> str:
+        """获取二级分类"""
+        # 从刮削数据中获取 genres 或 categories
+        genres = scraped_data.get('genres', [])
+        
+        # 检查是否在配置的二级分类映射中
+        if media_type in settings.subcategory_map:
+            subcategory_map = settings.subcategory_map[media_type]
+            # 尝试匹配第一个有效的分类
+            for genre in genres:
+                for key, value in subcategory_map.items():
+                    if genre.lower() == key.lower() or genre.lower() == value.lower():
+                        return value
+        
+        # 默认返回通用二级分类
+        default_subcategories = {
+            'movie': '其他',
+            'tv': '其他'
+        }
+        return default_subcategories.get(media_type, '其他')
     
     def _get_category(self, media_type: str) -> str:
         """获取分类"""

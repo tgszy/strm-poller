@@ -7,7 +7,7 @@
 ## 🌟 功能特性
 
 - 🚀 **实时监控**: watchdog实时监听，增/改/移动事件≤1秒响应
-- 📁 **智能整理**: 支持分类别、分类型、不整理三种策略  
+- 📁 **智能整理**: 支持分类别、分类型、不整理三种策略，新增二级分类整理功能  
 - 🎬 **多源刮削**: TMDB→豆瓣→Bangumi→IMDb→TVDB，支持拖拽排序和自动回退
 - 🌐 **代理支持**: 支持http/https/socks5代理，统一出口
 - 📺 **电视剧支持**: 自动识别季/集目录结构
@@ -16,6 +16,7 @@
 - 💾 **内存限制**: 用户可设上限，容器内RLIMIT_AS + Docker -m双保险
 - 🌐 **WebUI控制台**: 三栏式响应式设计，实时日志推送
 - 📊 **系统监控**: 实时内存使用监控和告警
+- 🔔 **多渠道通知**: 支持微信企业机器人、Telegram通知，可自定义通知事件范围
 - 🔧 **灵活配置**: 支持环境变量和配置文件双重配置
 
 ## 🚀 快速开始
@@ -171,6 +172,14 @@ docker run -d \
 | `SRC_PATH` | `/src` | 默认源目录路径（可自定义） |
 | `DST_PATH` | `/dst` | 默认目标目录路径（可自定义） |
 | `WATCH_DEBOUNCE_SECONDS` | `1.0` | 文件监控防抖时间（秒） |
+| `NOTIFY_WECHAT_ENABLED` | `false` | 是否启用微信企业机器人通知 |
+| `NOTIFY_WECHAT_WEBHOOK_URL` | - | 微信企业机器人webhook地址 |
+| `NOTIFY_WECHAT_EVENTS` | `task_started,task_completed,task_failed` | 微信通知事件范围，逗号分隔 |
+| `NOTIFY_TELEGRAM_ENABLED` | `false` | 是否启用Telegram通知 |
+| `NOTIFY_TELEGRAM_BOT_TOKEN` | - | Telegram机器人token |
+| `NOTIFY_TELEGRAM_CHAT_ID` | - | Telegram聊天ID |
+| `NOTIFY_TELEGRAM_EVENTS` | `task_started,task_completed,task_failed` | Telegram通知事件范围，逗号分隔 |
+| `ORGANIZE_ENABLE_SUBCATEGORY` | `true` | 是否启用二级分类整理 |
 
 ## 访问后台页面
 
