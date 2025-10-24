@@ -13,11 +13,13 @@ services:
       # Windows路径示例: - C:\path\to\config:/config
       - ./config:/config
       # 源目录：包含.strm文件的目录，建议设置为只读
+      # 请根据您的环境修改下面的路径
       # Windows路径示例: - C:\path\to\src:/src:ro
-      - /mnt/user/aliyun:/src:ro
+      - ./src_files:/src:ro
       # 目标目录：整理后的媒体文件将存放在这里
+      # 请根据您的环境修改下面的路径
       # Windows路径示例: - C:\path\to\dst:/dst
-      - /mnt/user/emby:/dst
+      - ./dst_files:/dst
       # 可自定义添加更多源目录和目标目录映射
       # 例如：
       # - ./other_source:/src2:ro

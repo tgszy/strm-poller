@@ -1,0 +1,133 @@
+# STRM Poller 配置文件
+
+# 服务器配置
+server:
+  host: 0.0.0.0
+  port: 3456
+  debug: false
+
+# 路径配置
+paths:
+  # 源目录列表，用于扫描.strm文件
+  sources:
+    - path: /src
+      recursive: true
+      watch: true
+  # 目标目录列表，用于存放整理后的媒体文件
+  destinations:
+    - path: /dst
+      name: "默认目标"
+
+# 代理配置
+proxy:
+  enabled: false
+  type: http  # http, https, socks5
+  host: ""
+  port: ""
+  username: ""
+  password: ""
+
+# 整理配置
+organize:
+  # 是否启用二级分类
+  enable_subcategory: true
+  # 默认整理策略: categorize(分类), type(类型), none(不整理)
+  strategy: categorize
+  # 电影分类
+  movie:
+    # 电影整理策略，优先级高于全局策略
+    strategy: categorize
+    # 自定义命名格式
+    naming_format: "{title} ({year})"
+    # 二级分类目录名格式
+    subcategory_format: "{year}-{category}"
+  # 电视剧分类
+  series:
+    # 电视剧整理策略
+    strategy: categorize
+    # 电视剧命名格式
+    naming_format: "{title} ({year})"
+    # 季命名格式
+    season_format: "Season {season_number:02d}"
+    # 集命名格式
+    episode_format: "S{season_number:02d}E{episode_number:02d}"
+    # 二级分类目录名格式
+    subcategory_format: "{year}-{category}"
+
+# 刮削配置
+scraper:
+  # 刮削源优先级排序（从上到下）
+  sources:
+    - tmdb
+    - douban
+    - bangumi
+    - imdb
+    - tvdb
+  # TMDB配置
+  tmdb:
+    api_key: ""
+    language: "zh-CN"
+    region: "CN"
+  # 豆瓣配置
+  douban:
+    api_key: ""
+    user_agent: ""
+  # Bangumi配置
+  bangumi:
+    api_key: ""
+  # 重试配置
+  retry:
+    max_attempts: 3
+    retry_interval_hours: 2
+    max_retry_hours: 24
+
+# 任务配置
+task:
+  # 最大并发任务数
+  max_concurrent: 3
+  # 任务队列大小
+  queue_size: 100
+  # 任务超时时间（分钟）
+  timeout: 60
+
+# 监控配置
+monitor:
+  # 内存监控告警阈值（MB）
+  memory_alert_threshold: 900
+  # 健康检查间隔（秒）
+  health_check_interval: 30
+
+# 通知配置
+notification:
+  # 微信企业机器人通知
+  wechat:
+    enabled: false
+    webhook_url: ""
+    events:
+      - task_started
+      - task_completed
+      - task_failed
+  # Telegram通知
+  telegram:
+    enabled: false
+    bot_token: ""
+    chat_id: ""
+    events:
+      - task_started
+      - task_completed
+      - task_failed
+
+# 日志配置
+log:
+  level: INFO
+  format: json
+  file_rotation: true
+  max_file_size: 10
+  max_backup_count: 5
+
+# 数据库配置
+database:
+  type: sqlite
+  path: /config/data.db
+  pool_size: 5
+  timeout: 30
