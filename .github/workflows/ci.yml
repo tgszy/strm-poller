@@ -8,10 +8,10 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     strategy:
       matrix:
-        # 仅支持Python 3.9、3.10和3.11版本
+        # 明确指定支持的Python版本，不包括3.1
         python-version: [3.9, 3.10, 3.11]
       # 确保每个Python版本独立运行，一个失败不会取消其他版本
       fail-fast: false
@@ -26,6 +26,8 @@ jobs:
         cache: 'pip'
         # 明确指定版本选择策略，避免任何版本推断问题
         check-latest: false
+        # 确保使用稳定的版本，避免版本解析问题
+        architecture: 'x64'
     
     - name: Install dependencies
       run: |
