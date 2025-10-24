@@ -163,7 +163,12 @@ async def shutdown_event():
 @app.get("/")
 async def root():
     """根路径，返回WebUI"""
-    return {"message": "STRM Poller API", "version": "3.0.0"}
+    static_dir = Path(__file__).parent.parent / "static"
+    index_path = static_dir / "index.html"
+    if index_path.exists():
+        return HTMLResponse(content=index_path.read_text(encoding="utf-8"))
+    else:
+        return {"message": "STRM Poller API", "version": "3.0.0", "error": "WebUI not found"}
 
 @app.get("/api/health")
 async def health_check():
