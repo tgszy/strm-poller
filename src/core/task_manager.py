@@ -132,12 +132,10 @@ class TaskManager:
             logger.info(f"启动任务成功: {task.name} (ID: {task_id})")
             
             # 发送任务开始通知
-            asyncio.create_task(
-                notification_manager.notify(
-                    title=f"任务开始: {task.name}",
-                    message=f"任务ID: {task_id}\n源路径: {task.source_path}\n目标路径: {task.destination_path}\n整理策略: {task.organize_strategy}",
-                    event_type=NotificationEvents.TASK_STARTED
-                )
+            await notification_manager.notify(
+                title=f"任务开始: {task.name}",
+                message=f"任务ID: {task_id}\n源路径: {task.source_path}\n目标路径: {task.destination_path}\n整理策略: {task.organize_strategy}",
+                event_type=NotificationEvents.TASK_STARTED
             )
             
             return True
@@ -407,12 +405,10 @@ class TaskWorker:
         logger.info(f"STRM文件处理完成: {strm_file} -> {destination_path}")
         
         # 发送文件处理成功通知
-        asyncio.create_task(
-            notification_manager.notify(
-                title=f"文件处理成功: {os.path.basename(strm_file)}",
-                message=f"原路径: {strm_file}\n目标路径: {destination_path}\n媒体标题: {scraped_data.get('title')}\n年份: {scraped_data.get('year')}",
-                event_type=NotificationEvents.FILE_PROCESSED
-            )
+        await notification_manager.notify(
+            title=f"文件处理成功: {os.path.basename(strm_file)}",
+            message=f"原路径: {strm_file}\n目标路径: {destination_path}\n媒体标题: {scraped_data.get('title')}\n年份: {scraped_data.get('year')}",
+            event_type=NotificationEvents.FILE_PROCESSED
         )
     
     def _extract_media_info(self, file_name: str) -> dict:
