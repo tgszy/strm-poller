@@ -7,13 +7,13 @@ import asyncio
 import os
 from pathlib import Path
 
-from .core.config import settings
-from .core.logger import logger
-from .core.database import init_db, get_db, Task, FileRecord, ScraperConfig, SystemConfig
-from .core.task_manager import task_manager
-from .core.watcher import file_processor
-from .core.proxy_memory import ProxyManager, MemoryManager, ResourceMonitor, ProxyConfig
-from .services.monitor import websocket_manager, task_monitor, stats_collector
+from ..core.config import settings
+from ..core.logger import logger
+from ..core.database import init_db, get_db, Task, FileRecord, ScraperConfig, SystemConfig
+from ..core.task_manager import task_manager
+from ..core.watcher import file_processor
+from ..core.proxy_memory import ProxyManager, MemoryManager, ResourceMonitor, ProxyConfig
+from ..services.monitor import websocket_manager, task_monitor, stats_collector
 
 # 初始化数据库
 init_db()
