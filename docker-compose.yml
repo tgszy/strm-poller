@@ -7,7 +7,7 @@ services:
     container_name: strm-poller
     restart: unless-stopped
     ports:
-      - "3456:3456"
+      - "35455:35455"  # 默认端口映射，用户可以修改冒号前的数字来自定义外部端口
     volumes:
       # 配置目录：包含数据库、配置文件和日志
       # Windows路径示例: - C:\path\to\config:/config
@@ -41,7 +41,7 @@ services:
     mem_limit: 1g
     memswap_limit: 1g
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3456/api/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:35455/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3

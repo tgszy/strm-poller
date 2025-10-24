@@ -5,7 +5,7 @@ import os
 class Settings(BaseSettings):
     # 服务器配置
     host: str = "0.0.0.0"
-    port: int = 3456
+    port: int = 35455  # 容器内部默认端口
     debug: bool = False
     
     # 路径配置 - 支持从环境变量读取，增加灵活性
