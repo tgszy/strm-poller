@@ -40,13 +40,34 @@ docker buildx inspect --bootstrap
 
 # 构建多架构镜像并推送到Docker Hub
 echo "🔨 开始构建多架构镜像..."
-docker buildx build \
-    --platform "$PLATFORMS" \
-    --tag "$DOCKERHUB_IMAGE:$VERSION" \
-    --tag "$DOCKERHUB_IMAGE:latest" \
-    --push \
-    --file Dockerfile \
-    .
+# 添加重试逻辑，最多重试3次
+RETRY_COUNT=0
+MAX_RETRIES=3
+BUILD_SUCCESS=false
+
+while [ $RETRY_COUNT -lt $MAX_RETRIES ] && [ "$BUILD_SUCCESS" = false ]; do
+    RETRY_COUNT=$((RETRY_COUNT+1))
+    echo "尝试构建第 $RETRY_COUNT/$MAX_RETRIES 次..."
+    
+    if docker buildx build \
+        --platform "$PLATFORMS" \
+        --tag "$DOCKERHUB_IMAGE:$VERSION" \
+        --tag "$DOCKERHUB_IMAGE:latest" \
+        --push \
+        --file Dockerfile \
+        .; then
+        BUILD_SUCCESS=true
+        echo "✅ 构建成功！"
+    else
+        echo "❌ 构建失败，${RETRY_COUNT}秒后重试..."
+        sleep $RETRY_COUNT
+    fi
+done
+
+if [ "$BUILD_SUCCESS" = false ]; then
+    echo "❌ 构建失败，已达到最大重试次数"
+    exit 1
+fi
 
 echo "✅ 构建完成！镜像已推送到Docker Hub: $DOCKERHUB_IMAGE:$VERSION"
 echo "📦 支持的架构: $PLATFORMS"

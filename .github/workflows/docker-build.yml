@@ -38,7 +38,7 @@ jobs:
           type=semver,pattern={{version}}
           type=semver,pattern={{major}}.{{minor}}
     
-    - name: Build and push
+    - name: Build and push with retry
       uses: docker/build-push-action@v4
       with:
         context: .
@@ -48,3 +48,9 @@ jobs:
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
+        # Add retry strategy for temporary outages
+        retry: 3
+        retry-delay: 10s
+        # Handle external service errors gracefully
+        # Set buildx timeout to avoid hanging builds
+        timeout: 30m
