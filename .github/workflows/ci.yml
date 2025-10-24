@@ -11,10 +11,14 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
+        # 仅支持Python 3.9、3.10和3.11版本，排除Python 3.1
         python-version: [3.9, 3.10, 3.11]
-    # 固定使用Ubuntu 22.04以确保兼容性
+    # 明确固定使用Ubuntu 22.04基础的Python镜像，避免任何缓存或默认配置问题
     container:
       image: python:${{ matrix.python-version }}-bullseye
+      # 添加环境变量以确保正确的Python版本
+      env:
+        PYTHON_VERSION: ${{ matrix.python-version }}
 
     steps:
     - uses: actions/checkout@v3
