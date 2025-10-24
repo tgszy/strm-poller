@@ -105,33 +105,89 @@ if not static_dir_found:
     logger.warning("未找到有效的静态文件目录，WebUI可能无法正常工作")
 
 def get_all_network_addresses():
-    """获取所有网络接口的IP地址"""
+    """获取所有网络接口的IP地址，支持识别本地IP和桥接模式"""
     addresses = []
     try:
         # 获取主机名
         hostname = socket.gethostname()
+        logger.debug(f"当前主机名: {hostname}")
         
         # 获取所有网络接口的IP地址
-        for ip in socket.gethostbyname_ex(hostname)[2]:
+        logger.debug(f"尝试方法1: 通过socket.gethostbyname_ex获取IP地址")
+        host_ex_result = socket.gethostbyname_ex(hostname)
+        logger.debug(f"hostbyname_ex结果: {host_ex_result}")
+        
+        for ip in host_ex_result[2]:
             # 过滤掉IPv6链路本地地址和环回地址
             if not ip.startswith('127.') and not ip.startswith('fe80::'):
                 addresses.append(ip)
+                logger.debug(f"添加有效IP地址: {ip}")
+                # 特别标记本地网络地址(192.168.x.x)
+                if ip.startswith('192.168.'):
+                    logger.info(f"检测到本地网络IP地址: {ip}")
         
         # 如果没有找到除了环回以外的地址，尝试另一种方法
         if not addresses:
-            for res in socket.getaddrinfo(hostname, None, socket.AF_INET):
+            logger.debug(f"方法1未找到有效地址，尝试方法2: 通过socket.getaddrinfo获取IP地址")
+            addrinfo_results = socket.getaddrinfo(hostname, None, socket.AF_INET)
+            logger.debug(f"getaddrinfo结果数量: {len(addrinfo_results)}")
+            
+            for res in addrinfo_results:
                 ip = res[4][0]
                 if not ip.startswith('127.'):
                     addresses.append(ip)
+                    logger.debug(f"通过getaddrinfo添加IP地址: {ip}")
+                    if ip.startswith('192.168.'):
+                        logger.info(f"通过getaddrinfo检测到本地网络IP地址: {ip}")
+        
+        # 尝试获取所有网络接口信息
+        try:
+            import netifaces
+            logger.debug(f"尝试使用netifaces库获取网络接口信息")
+            for interface in netifaces.interfaces():
+                addrs = netifaces.ifaddresses(interface)
+                # 检查IPv4地址
+                if netifaces.AF_INET in addrs:
+                    for addr_info in addrs[netifaces.AF_INET]:
+                        ip = addr_info.get('addr')
+                        if ip and not ip.startswith('127.'):
+                            addresses.append(ip)
+                            logger.debug(f"通过netifaces添加接口 {interface} 的IP地址: {ip}")
+                            if ip.startswith('192.168.'):
+                                logger.info(f"通过netifaces检测到本地网络IP地址: {ip} (接口: {interface})")
+        except ImportError:
+            logger.debug(f"netifaces库未安装，跳过详细网络接口扫描")
+        except Exception as e:
+            logger.debug(f"使用netifaces获取网络接口信息失败: {e}")
+        
+        # 手动添加用户指定的IP地址（如果环境变量设置了）
+        custom_ip = os.environ.get('CUSTOM_BIND_IP')
+        if custom_ip:
+            logger.info(f"检测到自定义绑定IP: {custom_ip} (通过环境变量设置)")
+            addresses.append(custom_ip)
+        
+        # 检查Docker桥接网络地址
+        try:
+            # 尝试获取Docker默认桥接网络地址
+            docker_bridge_ip = socket.gethostbyname('docker.for.win.localhost')
+            if docker_bridge_ip and docker_bridge_ip not in addresses:
+                addresses.append(docker_bridge_ip)
+                logger.info(f"检测到Docker桥接网络地址: {docker_bridge_ip}")
+        except:
+            logger.debug(f"未检测到Docker桥接网络地址")
         
         # 去重并排序
         addresses = sorted(list(set(addresses)))
+        logger.debug(f"去重排序后的地址列表: {addresses}")
         
         # 添加localhost作为备用
         addresses.insert(0, '127.0.0.1')
+        logger.debug(f"最终地址列表 (包含localhost): {addresses}")
         
     except Exception as e:
         logger.error(f"获取网络地址失败: {e}")
+        import traceback
+        logger.debug(f"详细错误信息: {traceback.format_exc()}")
         addresses = ['127.0.0.1']
     
     return addresses
@@ -144,11 +200,57 @@ async def startup_event():
     # 获取所有可用的网络地址
     network_addresses = get_all_network_addresses()
     
+    # 添加详细的网络绑定信息日志
     logger.info(f"STRM Poller 服务启动 - 监听地址: {settings.host}:{settings.port}")
     logger.info(f"允许访问来源: {settings.host == '0.0.0.0' and '所有网络接口' or '仅本地'}")
-    logger.info(f"可通过以下IP地址访问WebUI:")
+    logger.info(f"网络模式: {settings.host == '0.0.0.0' and '全局绑定' or '本地绑定'}")
+    
+    # 记录环境信息
+    is_docker = os.environ.get('DOCKER_ENV', 'false').lower() == 'true' or os.path.exists('/.dockerenv')
+    logger.info(f"运行环境: {'Docker容器' if is_docker else '本地环境'}")
+    
+    # 检测桥接模式设置
+    bridge_mode = os.environ.get('BRIDGE_MODE', 'false').lower() == 'true'
+    logger.info(f"桥接模式: {'已启用' if bridge_mode else '未启用'}")
+    
+    # 容器环境特殊提醒
+    if is_docker:
+        logger.info(f"容器环境注意事项:")
+        logger.info(f"  1. 确保端口映射正确: -p {settings.port}:{settings.port}")
+        logger.info(f"  2. 推荐使用host网络模式: --network=host")
+        logger.info(f"  3. 或使用extra_hosts确保主机访问: --add-host=host.docker.internal:host-gateway")
+        logger.info(f"  4. 桥接模式: 通过设置 BRIDGE_MODE=true 启用完整的桥接支持")
+    
+    # 防火墙提醒
+    logger.info(f"防火墙设置提醒:")
+    logger.info(f"  - Windows: 请确保{settings.port}端口已在防火墙中开放")
+    logger.info(f"  - Linux: 请检查iptables规则确保端口可访问")
+    
+    # 特别提示本地网络访问
+    local_network_ips = [ip for ip in network_addresses if ip.startswith('192.168.') and ip != '127.0.0.1']
+    if local_network_ips:
+        logger.info(f"\n本地网络访问信息 (重要):")
+        logger.info(f"===================================")
+        for ip in local_network_ips:
+            logger.info(f"  本地网络访问地址: http://{ip}:{settings.port}")
+        logger.info(f"  桥接模式访问格式: http://[主机IP]:{settings.port}")
+        logger.info(f"===================================")
+    
+    logger.info(f"\n可通过以下所有IP地址访问WebUI:")
     for ip in network_addresses:
         logger.info(f"  - http://{ip}:{settings.port}")
+    
+    # 网络状态检查
+    import socket
+    try:
+        test_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        test_socket.settimeout(1)
+        bind_result = test_socket.bind((settings.host, settings.port))
+        test_socket.close()
+        logger.info(f"端口绑定测试成功: {settings.host}:{settings.port}")
+    except Exception as e:
+        logger.error(f"端口绑定测试失败: {e}")
+        logger.error(f"请检查端口 {settings.port} 是否已被占用或权限不足")
     
     # 初始化内存管理器
     memory_manager = MemoryManager(settings.max_memory_mb)
@@ -638,33 +740,208 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @app.get("/api/network/addresses")
 async def get_network_addresses():
-    """获取所有可用的网络地址，用于WebUI显示"""
+    """获取所有可用的网络地址，用于WebUI显示，增强对桥接模式和本地网络的支持"""
     addresses = get_all_network_addresses()
     port = settings.port
     
+    # 获取更多网络信息
+    import socket
+    hostname = socket.gethostname()
+    is_docker = os.environ.get('DOCKER_ENV', 'false').lower() == 'true' or os.path.exists('/.dockerenv')
+    bridge_mode = os.environ.get('BRIDGE_MODE', 'false').lower() == 'true'
+    
+    # 分离本地网络IP和其他IP
+    local_network_ips = [ip for ip in addresses if ip.startswith('192.168.') and ip != '127.0.0.1']
+    other_ips = [ip for ip in addresses if not ip.startswith('192.168.') or ip == '127.0.0.1']
+    
+    # 检查网络连接状态
+    connection_status = {
+        "hostname": hostname,
+        "is_docker": is_docker,
+        "bridge_mode": bridge_mode,
+        "listen_host": settings.host,
+        "listen_port": port,
+        "is_global_binding": settings.host == '0.0.0.0',
+        "local_network_ips": local_network_ips,
+        "environment_vars": {
+            "DOCKER_ENV": os.environ.get('DOCKER_ENV'),
+            "BRIDGE_MODE": os.environ.get('BRIDGE_MODE'),
+            "CUSTOM_BIND_IP": os.environ.get('CUSTOM_BIND_IP'),
+            "HOSTNAME": os.environ.get('HOSTNAME')
+        }
+    }
+    
+    # 添加连接诊断信息
+    try:
+        # 尝试连接本地服务
+        test_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        test_socket.settimeout(1)
+        test_socket.connect(('127.0.0.1', port))
+        test_socket.close()
+        connection_status["local_connection_test"] = "success"
+        
+        # 测试本地网络连接（如果有本地网络IP）
+        connection_status["local_network_tests"] = {}
+        for ip in local_network_ips:
+            try:
+                test_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                test_socket.settimeout(1)
+                test_socket.connect((ip, port))
+                test_socket.close()
+                connection_status["local_network_tests"][ip] = "success"
+            except Exception as e:
+                connection_status["local_network_tests"][ip] = f"failed: {str(e)}"
+    except Exception as e:
+        connection_status["local_connection_test"] = f"failed: {str(e)}"
+    
+    # 生成访问URLs，优先显示本地网络地址
+    access_urls = []
+    for ip in local_network_ips:
+        access_urls.append(f"http://{ip}:{port}")
+    for ip in other_ips:
+        access_urls.append(f"http://{ip}:{port}")
+    
+    # 生成桥接模式特定提示
+    bridge_tips = []
+    if bridge_mode:
+        bridge_tips = [
+            "桥接模式已启用，支持通过主机IP直接访问",
+            "请确保防火墙已开放端口访问",
+            "Docker桥接网络需要正确配置端口映射"
+        ]
+    
     return {
         "addresses": addresses,
+        "local_network_addresses": local_network_ips,
         "port": port,
-        "access_urls": [f"http://{ip}:{port}" for ip in addresses],
-        "timestamp": datetime.datetime.now().isoformat()
+        "access_urls": access_urls,
+        "preferred_access_urls": [f"http://{ip}:{port}" for ip in local_network_ips] if local_network_ips else access_urls[:1],
+        "timestamp": datetime.datetime.now().isoformat(),
+        "connection_info": connection_status,
+        "tips": [
+            f"确保防火墙已开放端口{port}",
+            f"Docker环境下使用-p {port}:{port}映射端口",
+            "或使用--network=host直接使用主机网络",
+            f"访问地址格式: http://[设备IP]:{port}",
+            "本地网络访问: 使用192.168.x.x格式的IP地址",
+            "启用桥接模式: 设置环境变量 BRIDGE_MODE=true"
+        ] + bridge_tips
     }
 
 if __name__ == "__main__":
     import uvicorn
+    import socket
     
     # 获取所有可用的网络地址并记录
     network_addresses = get_all_network_addresses()
-    logger.info(f"使用uvicorn启动应用: host={settings.host}, port={settings.port}")
-    logger.info(f"可通过以下IP地址访问WebUI:")
+    # 强制使用'0.0.0.0'以确保在容器环境中绑定到所有网络接口
+    host = '0.0.0.0'
+    
+    # 检测环境设置
+    is_docker = os.environ.get('DOCKER_ENV', 'false').lower() == 'true' or os.path.exists('/.dockerenv')
+    bridge_mode = os.environ.get('BRIDGE_MODE', 'false').lower() == 'true'
+    custom_ip = os.environ.get('CUSTOM_BIND_IP')
+    
+    # 添加详细的启动日志
+    logger.info("=== STRM Poller 服务启动配置 ===")
+    logger.info(f"使用uvicorn启动应用: host={host}, port={settings.port}")
+    logger.info(f"WebUI配置为监听所有网络接口 (0.0.0.0)")
+    logger.info(f"运行环境检测: {'Docker容器' if is_docker else '本地环境'}")
+    logger.info(f"桥接模式: {'已启用' if bridge_mode else '未启用'}")
+    
+    # 特别标记本地网络地址
+    local_network_ips = [ip for ip in network_addresses if ip.startswith('192.168.') and ip != '127.0.0.1']
+    if local_network_ips:
+        logger.info(f"\n🔍 检测到本地网络IP地址 (192.168.x.x):")
+        for ip in local_network_ips:
+            logger.info(f"   http://{ip}:{settings.port}")
+        logger.info(f"   请使用以上地址从本地网络访问WebUI")
+    else:
+        logger.info(f"\n⚠️  未检测到本地网络IP地址 (192.168.x.x)")
+        logger.info(f"   请检查网络连接或使用以下地址:")
+        
+    # 显示所有可能的访问地址
+    logger.info(f"\n📡 所有可用的访问地址:")
     for ip in network_addresses:
-        logger.info(f"  - http://{ip}:{settings.port}")
+        logger.info(f"   - http://{ip}:{settings.port}")
+    
+    # 容器环境特殊说明
+    if is_docker:
+        logger.info("\n=== Docker环境配置说明 ===")
+        logger.info(f"容器内部访问地址: http://127.0.0.1:{settings.port}")
+        logger.info(f"主机映射访问格式: -p {settings.port}:{settings.port}")
+        logger.info(f"推荐使用host网络模式: --network=host")
+        logger.info(f"或添加主机访问: --add-host=host.docker.internal:host-gateway")
+        
+        # 桥接模式特殊说明
+        if bridge_mode:
+            logger.info("\n=== 桥接模式配置 ===")
+            logger.info("桥接模式已启用，配置参数:")
+            logger.info(f"  - 外部访问格式: http://[主机IP]:{settings.port}")
+            logger.info(f"  - 例如: http://192.168.0.111:{settings.port}")
+            logger.info(f"  - 确保端口映射正确: -p {settings.port}:{settings.port}")
+            logger.info("  - 桥接模式允许从同一网络的其他设备访问")
+    
+    # 防火墙配置提醒
+    logger.info("\n=== 防火墙配置提醒 ===")
+    logger.info(f"请确保端口 {settings.port} 已在防火墙中开放")
+    if os.name == 'nt':  # Windows系统
+        logger.info(f"Windows防火墙命令: netsh advfirewall firewall add rule name=\"STRM Poller\" dir=in action=allow protocol=TCP localport={settings.port} remoteip=any profile=any")
+    else:  # Linux系统
+        logger.info(f"Linux防火墙命令: sudo ufw allow {settings.port}/tcp")
+    
+    # 网络诊断信息
+    logger.info("\n=== 网络诊断信息 ===")
+    try:
+        # 测试端口是否可用
+        test_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        test_socket.settimeout(2)
+        test_socket.bind((host, settings.port))
+        test_socket.close()
+        logger.info(f"✅ 端口 {settings.port} 可用，绑定测试成功")
+    except Exception as e:
+        logger.error(f"❌ 端口 {settings.port} 绑定测试失败: {e}")
+        logger.error(f"  请检查端口是否已被占用或权限不足")
+    
+    # 获取网络接口信息
+    try:
+        logger.info(f"\n📊 网络连接测试:")
+        for ip in network_addresses:
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(1)
+                result = sock.connect_ex((ip, settings.port))
+                status = "✅ 可连接" if result == 0 else "❌ 服务未启动"
+                logger.info(f"   - IP: {ip}, 端口: {settings.port}, 状态: {status}")
+                sock.close()
+            except Exception as e:
+                logger.info(f"   - IP: {ip}, 状态检查失败: {e}")
+    except Exception as e:
+        logger.debug(f"获取网络接口状态失败: {e}")
+    
+    # 显示用户指南
+    logger.info("\n=== 用户访问指南 ===")
+    logger.info(f"1. 如果您的设备IP是 192.168.0.111，请使用以下地址访问:")
+    logger.info(f"   http://192.168.0.111:{settings.port}")
+    logger.info(f"2. 确保防火墙已开放{settings.port}端口")
+    logger.info(f"3. Docker运行时请使用: docker run -p {settings.port}:{settings.port} strm-poller")
+    logger.info(f"4. 启用桥接模式: docker run -p {settings.port}:{settings.port} -e BRIDGE_MODE=true strm-poller")
+    
+    logger.info("\n=== 启动服务 ===")
     
     # 显式配置uvicorn参数以确保正确绑定所有网络接口和桥接模式支持
     uvicorn.run(
         app,
-        host=settings.host,
+        host=host,  # 直接使用'0.0.0.0'而不是settings.host
         port=settings.port,
-        log_level="info",
+        log_level="debug",  # 提高日志级别以帮助调试
         access_log=True,  # 启用访问日志以帮助调试连接问题
-        reload=False      # 生产环境禁用自动重载
+        reload=False,      # 生产环境禁用自动重载
+        forwarded_allow_ips="*",  # 允许所有IP通过代理访问，确保容器环境正常工作
+        interface="",  # 让uvicorn自动处理接口绑定
+        backlog=2048,  # 增加连接队列大小
+        workers=1,  # 单工作进程，避免多进程绑定问题
+        # 桥接模式特定配置
+        limit_concurrency=1000 if bridge_mode else None,  # 桥接模式下增加并发限制
+        timeout_keep_alive=30 if bridge_mode else None  # 桥接模式下优化keep-alive时间
     )

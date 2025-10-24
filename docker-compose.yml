@@ -6,8 +6,15 @@ services:
     # image: tgszy/strm-poller:latest
     container_name: strm-poller
     restart: unless-stopped
+    # 支持桥接模式，默认使用bridge网络
+    # 注释掉host网络模式，改为使用默认的bridge网络并正确映射端口
+    # network_mode: "host"
     ports:
       - "35455:35455"  # 默认端口映射，用户可以修改冒号前的数字来自定义外部端口
+    # 网络配置，确保容器可以被主机网络访问
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+      - "docker.for.win.localhost:host-gateway"  # Windows Docker兼容性
     volumes:
       # 配置目录：包含数据库、配置文件和日志
       # Windows路径示例: - C:\path\to\config:/config
