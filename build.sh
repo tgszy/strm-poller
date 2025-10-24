@@ -1,12 +1,12 @@
 #!/bin/sh
-# Docker构建脚本，支持多架构构建
+# Docker构建脚本，针对amd64架构
 
 set -e
 
 # 镜像名称和标签
 IMAGE_NAME="ghcr.io/tgszy/strm-poller"
 VERSION="${1:-latest}"
-PLATFORMS="linux/amd64,linux/arm64"
+PLATFORMS="linux/amd64"
 
 # 检查是否安装了buildx
 if ! docker buildx version > /dev/null 2>&1; then

@@ -1029,12 +1029,12 @@ docker build -t strm-poller:latest .
 docker tag strm-poller:latest ghcr.io/tgszy/strm-poller:latest
 docker push ghcr.io/tgszy/strm-poller:latest
 
-# 或者直接构建多架构镜像
-docker buildx build --platform linux/amd64,linux/arm64 \
+# 或者直接构建amd64架构镜像
+docker buildx build --platform linux/amd64 \
   -t ghcr.io/tgszy/strm-poller:latest \
   --push .
 
-# 3. 在生产环境部署
+# 3. 在生产环境部署（仅支持amd64/x86_64架构）
 docker run -d \
   --name=strm-poller-prod \
   -p 3456:3456 \

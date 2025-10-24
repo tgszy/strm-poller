@@ -6,40 +6,24 @@
 
 ### 1. 构建并推送镜像
 
-我们提供了多个构建脚本，根据你的需求选择：
-
-#### 多架构构建（推荐）
-支持 AMD64 和 ARM64 架构：
+使用提供的构建脚本进行amd64架构构建：
 ```bash
 # 给脚本执行权限
 chmod +x build-dockerhub.sh
 
-# 运行多架构构建
+# 运行amd64架构构建
 ./build-dockerhub.sh
 
 # 或者指定版本
 ./build-dockerhub.sh v1.0.0
 ```
 
-#### 单架构构建（简单）
-只构建当前架构：
-```bash
-# 给脚本执行权限
-chmod +x build-simple.sh
-
-# 运行单架构构建
-./build-simple.sh
-
-# 或者指定版本
-./build-simple.sh v1.0.0
-```
-
 ### 2. 使用 Docker Hub 镜像
 
 #### 使用 Docker Compose（推荐）
 ```bash
-# 使用 Docker Hub 版本的 docker-compose 文件
-docker-compose -f docker-compose-dockerhub.yml up -d
+# 使用标准的 docker-compose 文件
+docker-compose up -d
 ```
 
 #### 使用 Docker 命令
@@ -76,7 +60,7 @@ docker login
 # 输入你的 Docker Hub 用户名和密码
 ```
 
-### 3. 安装 Docker Buildx（多架构构建需要）
+### 3. 安装 Docker Buildx（构建需要）
 ```bash
 # 检查是否已安装
 docker buildx version
@@ -87,18 +71,12 @@ docker buildx version
 
 ## 🔧 构建脚本说明
 
-### build-dockerhub.sh（多架构）
-- ✅ 支持 AMD64 和 ARM64 架构
+### build-dockerhub.sh（amd64架构）
+- ✅ 仅支持 AMD64/x86_64 架构
 - ✅ 自动登录检查
 - ✅ 自动创建 buildx 构建器
 - ✅ 同时推送 `latest` 和版本标签
 - ✅ 构建结果检查
-
-### build-simple.sh（单架构）
-- ✅ 只构建当前架构（更快）
-- ✅ 适合开发和测试
-- ✅ 简单易用
-- ✅ 同时推送 `latest` 和版本标签
 
 ## 📊 镜像标签说明
 
@@ -107,7 +85,6 @@ docker buildx version
 | `latest` | 最新稳定版本 |
 | `v1.0.0` | 具体版本号 |
 | `dev` | 开发版本 |
-| `arm64` | ARM64 架构专用 |
 
 ## 🔄 自动更新
 
@@ -149,14 +126,13 @@ ping hub.docker.com
 ```bash
 # 给脚本执行权限
 chmod +x build-dockerhub.sh
-chmod +x build-simple.sh
 ```
 
 ## 📚 相关链接
 
 - [Docker Hub 仓库](https://hub.docker.com/r/tgszy/strm-poller)
 - [Docker Buildx 文档](https://docs.docker.com/buildx/working-with-buildx/)
-- [多架构构建指南](https://docs.docker.com/buildx/working-with-buildx/#build-multi-platform-images)
+
 - [STRM Poller 主文档](./README.md)
 
 ## 📞 支持

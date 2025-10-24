@@ -6,7 +6,7 @@ set -e
 # Docker Hub 镜像名称
 DOCKERHUB_IMAGE="tgszy/strm-poller"
 VERSION="${1:-latest}"
-PLATFORMS="linux/amd64,linux/arm64"
+PLATFORMS="linux/amd64"
 
 echo "🚀 开始构建 Docker Hub 镜像..."
 

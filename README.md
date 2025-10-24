@@ -2,6 +2,8 @@
 
 一个轻量化的媒体预处理服务，专为飞牛NAS设计，支持实时扫描.strm文件、自动整理和刮削元数据。
 
+> **注意**: 该项目仅支持amd64/x86_64架构设备运行。
+
 ## 🌟 功能特性
 
 - 🚀 **实时监控**: watchdog实时监听，增/改/移动事件≤1秒响应
@@ -39,39 +41,9 @@ docker run -d \
 
 ### Docker Compose（推荐）
 
-```yaml
-version: '3.8'
-
-services:
-  strm-poller:
-    image: ghcr.io/tgszy/strm-poller:latest
-    container_name: strm-poller
-    ports:
-      - "3456:3456"
-    volumes:
-      - /mnt/user/appdata/strm-poller:/config
-      - /mnt/user/aliyun:/src:ro
-      - /mnt/user/emby:/dst
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=Asia/Shanghai
-      - PROXY_ENABLED=true
-      - PROXY_TYPE=http
-      - PROXY_HOST=192.168.1.100
-      - PROXY_PORT=7890
-      - MAX_MEMORY_MB=1024
-      - SCRAPER_ORDER=tmdb,douban,bangumi,imdb,tvdb
-      - LOG_LEVEL=INFO
-    mem_limit: 1g
-    memswap_limit: 1g
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3456/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+使用项目根目录的 docker-compose.yml 文件：
+```bash
+docker-compose up -d
 ```
 
 ## 📁 路径映射建议
