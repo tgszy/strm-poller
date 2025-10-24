@@ -309,12 +309,10 @@ class TaskWorker:
                     db.commit()
                     
                     # 发送文件处理失败通知
-                    asyncio.create_task(
-                        notification_manager.notify(
-                            title=f"文件处理失败: {os.path.basename(strm_file)}",
-                            message=f"文件路径: {strm_file}\n错误信息: {str(e)}\n任务ID: {self.task.id}",
-                            event_type=NotificationEvents.FILE_FAILED
-                        )
+                    await notification_manager.notify(
+                        title=f"文件处理失败: {os.path.basename(strm_file)}",
+                        message=f"文件路径: {strm_file}\n错误信息: {str(e)}\n任务ID: {self.task.id}",
+                        event_type=NotificationEvents.FILE_FAILED
                     )
             
             # 更新任务状态
@@ -343,12 +341,10 @@ class TaskWorker:
             db.commit()
             
             # 发送任务失败通知
-            asyncio.create_task(
-                notification_manager.notify(
-                    title=f"任务失败: {self.task.name}",
-                    message=f"任务ID: {self.task.id}\n错误信息: {str(e)}\n已处理文件数: {self.processed_count}",
-                    event_type=NotificationEvents.TASK_FAILED
-                )
+            await notification_manager.notify(
+                title=f"任务失败: {self.task.name}",
+                message=f"任务ID: {self.task.id}\n错误信息: {str(e)}\n已处理文件数: {self.processed_count}",
+                event_type=NotificationEvents.TASK_FAILED
             )
             
         finally:
