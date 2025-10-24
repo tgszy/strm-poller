@@ -5,6 +5,8 @@ from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 import asyncio
 import os
+import socket
+import datetime
 from pathlib import Path
 
 from ..core.config import settings
@@ -81,18 +83,72 @@ class MemoryConfigModel(BaseModel):
     warning_threshold: float = 0.8
     critical_threshold: float = 0.95
 
-# 静态文件服务
-static_dir = Path(__file__).parent / "static"
-if static_dir.exists():
-    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+# 静态文件服务 - 自动查找多个可能的静态文件目录
+static_dirs = [
+    Path(__file__).parent / "static",
+    Path(__file__).parent.parent / "static",
+    Path("/src/static"),
+    Path("/app/src/static"),
+    Path("/app/static")
+]
+
+# 尝试挂载存在的静态文件目录
+static_dir_found = False
+for static_dir in static_dirs:
+    if static_dir.exists() and os.access(static_dir, os.R_OK):
+        logger.info(f"挂载静态文件目录: {static_dir}")
+        app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+        static_dir_found = True
+        break
+
+if not static_dir_found:
+    logger.warning("未找到有效的静态文件目录，WebUI可能无法正常工作")
+
+def get_all_network_addresses():
+    """获取所有网络接口的IP地址"""
+    addresses = []
+    try:
+        # 获取主机名
+        hostname = socket.gethostname()
+        
+        # 获取所有网络接口的IP地址
+        for ip in socket.gethostbyname_ex(hostname)[2]:
+            # 过滤掉IPv6链路本地地址和环回地址
+            if not ip.startswith('127.') and not ip.startswith('fe80::'):
+                addresses.append(ip)
+        
+        # 如果没有找到除了环回以外的地址，尝试另一种方法
+        if not addresses:
+            for res in socket.getaddrinfo(hostname, None, socket.AF_INET):
+                ip = res[4][0]
+                if not ip.startswith('127.'):
+                    addresses.append(ip)
+        
+        # 去重并排序
+        addresses = sorted(list(set(addresses)))
+        
+        # 添加localhost作为备用
+        addresses.insert(0, '127.0.0.1')
+        
+    except Exception as e:
+        logger.error(f"获取网络地址失败: {e}")
+        addresses = ['127.0.0.1']
+    
+    return addresses
 
 @app.on_event("startup")
 async def startup_event():
     """应用启动事件"""
     global proxy_manager, memory_manager, resource_monitor
     
+    # 获取所有可用的网络地址
+    network_addresses = get_all_network_addresses()
+    
     logger.info(f"STRM Poller 服务启动 - 监听地址: {settings.host}:{settings.port}")
     logger.info(f"允许访问来源: {settings.host == '0.0.0.0' and '所有网络接口' or '仅本地'}")
+    logger.info(f"可通过以下IP地址访问WebUI:")
+    for ip in network_addresses:
+        logger.info(f"  - http://{ip}:{settings.port}")
     
     # 初始化内存管理器
     memory_manager = MemoryManager(settings.max_memory_mb)
@@ -163,33 +219,78 @@ async def shutdown_event():
 # API路由
 @app.get("/")
 async def root():
-    """根路径，返回WebUI"""
-    # 尝试多个可能的静态文件路径，适应不同环境
+    """根路径，返回WebUI - 增强的桥接模式支持"""
+    # 尝试多个可能的静态文件路径，适应不同环境和桥接模式
     possible_paths = [
         Path(__file__).parent.parent / "static" / "index.html",  # 开发环境路径
         Path("/src/static/index.html"),  # Docker容器内路径
         Path("/app/src/static/index.html"),  # 另一个可能的Docker容器路径
         Path("/app/static/index.html"),  # 另一个可能的容器路径
+        Path("/static/index.html"),  # 直接从挂载点访问
+        Path(__file__).parent / "static" / "index.html",  # 另一个可能的相对路径
+        # 额外添加的路径用于桥接模式支持
+        Path("../static/index.html"),  # 相对路径支持
+        Path("./static/index.html"),  # 当前目录下的静态文件夹
+        Path(os.environ.get("STATIC_FILE_PATH", "") + "/index.html")  # 环境变量指定的路径
     ]
     
-    # 记录所有可能的路径存在状态
+    # 获取当前工作目录信息，用于调试
+    current_dir = os.getcwd()
+    logger.info(f"当前工作目录: {current_dir}")
+    
+    # 获取所有可用网络地址
+    network_addresses = get_all_network_addresses()
+    
+    # 记录所有可能的路径存在状态和详细信息
+    path_info = []
     for index_path in possible_paths:
+        # 跳过空路径
+        if not str(index_path).strip():
+            continue
+            
         exists = index_path.exists()
-        logger.info(f"检查WebUI路径: {index_path} - {'存在' if exists else '不存在'}")
+        is_readable = exists and os.access(index_path, os.R_OK)
+        file_info = {
+            "path": str(index_path),
+            "exists": exists,
+            "readable": is_readable,
+            "error": None
+        }
+        
+        logger.info(f"检查WebUI路径: {index_path} - 存在: {exists}, 可读: {is_readable}")
+        path_info.append(file_info)
         
         if exists:
             try:
                 # 检查文件权限
-                if os.access(index_path, os.R_OK):
-                    content = index_path.read_text(encoding="utf-8")
-                    logger.info(f"成功加载WebUI: {index_path}")
-                    return HTMLResponse(content=content)
+                if is_readable:
+                    # 验证文件内容
+                    with open(index_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                        # 简单验证是否为HTML文件
+                        if '<!DOCTYPE html>' in content.lower() or '<html' in content.lower():
+                            logger.info(f"成功加载WebUI: {index_path}")
+                            # 增强响应，添加访问信息到HTML标题
+                            if '<title>' in content:
+                                enhanced_title = f'<title>STRM Poller - 可访问地址: {" | ".join(network_addresses)}</title>'
+                                content = content.replace('<title>', enhanced_title, 1)
+                            return HTMLResponse(content=content)
+                        else:
+                            logger.warning(f"文件存在但可能不是有效的HTML: {index_path}")
                 else:
-                    logger.error(f"无权限读取WebUI文件: {index_path}")
+                    error_msg = f"无权限读取WebUI文件: {index_path}"
+                    file_info["error"] = error_msg
+                    logger.error(error_msg)
+            except UnicodeDecodeError:
+                error_msg = f"文件编码错误，无法读取: {index_path}"
+                file_info["error"] = error_msg
+                logger.error(error_msg)
             except Exception as e:
-                logger.error(f"读取WebUI文件失败 {index_path}: {e}")
+                error_msg = f"读取WebUI文件失败 {index_path}: {str(e)}"
+                file_info["error"] = error_msg
+                logger.error(error_msg)
     
-    # 所有路径都失败，返回详细错误信息
+    # 所有路径都失败，返回详细错误信息，包含更多调试数据
     logger.error("WebUI文件未找到或无法访问")
     return JSONResponse(
         status_code=503,
@@ -197,11 +298,25 @@ async def root():
             "message": "STRM Poller API", 
             "version": "3.0.0", 
             "error": "WebUI not found or inaccessible",
-            "searched_paths": [str(p) for p in possible_paths],
+            "current_working_directory": current_dir,
+            "network_addresses": network_addresses,
+            "access_urls": [f"http://{ip}:{settings.port}" for ip in network_addresses],
+            "path_check_results": path_info,
             "server_info": {
                 "host": settings.host,
                 "port": settings.port,
-                "debug": settings.debug
+                "debug": settings.debug,
+                "os": os.name,
+                "python_version": os.sys.version
+            },
+            "available_networks": {
+                "addresses": network_addresses,
+                "connection_hints": [
+                    "确保防火墙未阻止端口访问",
+                    "在桥接模式下检查网络配置",
+                    "尝试使用上面列出的IP地址访问",
+                    "检查Docker网络设置是否正确"
+                ]
             }
         }
     )
@@ -414,7 +529,7 @@ async def update_scraper_config(config_id: int, config: ScraperConfigUpdate):
         db_config.priority = config.priority
         db_config.timeout = config.timeout
         db_config.retry_count = config.retry_count
-        db_config.updated_at = datetime.now()
+        db_config.updated_at = datetime.datetime.now()
         
         db.commit()
         return {"success": True}
@@ -459,7 +574,7 @@ async def update_system_config(config: SystemConfigUpdate):
         else:
             db_config.value = config.value
             db_config.description = config.description
-            db_config.updated_at = datetime.now()
+            db_config.updated_at = datetime.datetime.now()
         
         db.commit()
         return {"success": True}
@@ -521,16 +636,35 @@ async def websocket_endpoint(websocket: WebSocket):
     finally:
         websocket_manager.disconnect(message_queue)
 
+@app.get("/api/network/addresses")
+async def get_network_addresses():
+    """获取所有可用的网络地址，用于WebUI显示"""
+    addresses = get_all_network_addresses()
+    port = settings.port
+    
+    return {
+        "addresses": addresses,
+        "port": port,
+        "access_urls": [f"http://{ip}:{port}" for ip in addresses],
+        "timestamp": datetime.datetime.now().isoformat()
+    }
+
 if __name__ == "__main__":
     import uvicorn
     
+    # 获取所有可用的网络地址并记录
+    network_addresses = get_all_network_addresses()
     logger.info(f"使用uvicorn启动应用: host={settings.host}, port={settings.port}")
+    logger.info(f"可通过以下IP地址访问WebUI:")
+    for ip in network_addresses:
+        logger.info(f"  - http://{ip}:{settings.port}")
     
-    # 显式配置uvicorn参数以确保正确绑定所有网络接口
+    # 显式配置uvicorn参数以确保正确绑定所有网络接口和桥接模式支持
     uvicorn.run(
         app,
         host=settings.host,
         port=settings.port,
         log_level="info",
-        access_log=True  # 启用访问日志以帮助调试连接问题
+        access_log=True,  # 启用访问日志以帮助调试连接问题
+        reload=False      # 生产环境禁用自动重载
     )
