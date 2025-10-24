@@ -21,3 +21,4 @@ resource==0.2.1
 click==8.1.7
 colorama==0.4.6
 tqdm==4.66.1
+psycopg2-binary==2.9.9

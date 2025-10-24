@@ -58,7 +58,24 @@ class Settings(BaseSettings):
     rename_template: str = "{title} ({year}){extension}"
     
     # 数据库配置
-    database_url: str = f"sqlite:///{config_path}/strm-poller.db"
+    # SQLite配置
+    sqlite_path: str = f"{config_path}/strm-poller.db"
+    
+    # PostgreSQL配置
+    postgres_enabled: bool = False
+    postgres_host: str = "localhost"
+    postgres_port: int = 5432
+    postgres_user: str = "strm-poller"
+    postgres_password: str = "password"
+    postgres_dbname: str = "strm-poller"
+    
+    @property
+    def database_url(self) -> str:
+        """获取数据库URL"""
+        if self.postgres_enabled:
+            return f"postgresql://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_dbname}"
+        else:
+            return f"sqlite:///{self.sqlite_path}"
     
     # 日志配置
     log_level: str = "INFO"
