@@ -12,6 +12,9 @@ jobs:
     strategy:
       matrix:
         python-version: [3.9, 3.10, 3.11]
+    # 固定使用Ubuntu 22.04以确保兼容性
+    container:
+      image: python:${{ matrix.python-version }}-bullseye
 
     steps:
     - uses: actions/checkout@v3

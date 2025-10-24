@@ -10,6 +10,9 @@ on:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    # 固定使用Ubuntu 22.04以确保兼容性
+    container:
+      image: docker:20.10.24-dind
     
     steps:
     - name: Checkout code
