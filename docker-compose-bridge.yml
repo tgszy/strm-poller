@@ -1,0 +1,41 @@
+# Bridge网络模式配置文件
+# 使用方法: docker-compose -f docker-compose-bridge.yml up -d
+version: '3'
+services:
+  strm-poller:
+    build: .
+    image: tgszy/strm-poller:master
+    container_name: strm-poller
+    restart: unless-stopped
+    networks:
+      - strm_network
+    ports:
+      - "35455:35455"  # bridge模式下的端口映射
+    volumes:
+      - ./config:/config
+      - ./src_files:/src:ro
+      - ./dst_files:/dst
+    environment:
+      - TZ=Asia/Shanghai
+      - MAX_MEMORY=1024
+      - PROXY_ENABLED=false
+      - LOG_LEVEL=INFO
+      - DOCKER_ENV=true
+      - CUSTOM_BIND_IP=0.0.0.0
+    mem_limit: 1g
+    memswap_limit: 1g
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:35455/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  strm_network:
+    driver: bridge

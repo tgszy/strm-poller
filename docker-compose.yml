@@ -1,56 +1,26 @@
+# 此文件提供两种部署模式，请根据需要选择其中一种
+
+# 模式1: Host网络模式（推荐）
+# 使用方法: docker-compose -f docker-compose.yml up -d
+version: '3'
 services:
   strm-poller:
-    # 使用本地构建的镜像替代GitHub Container Registry
     build: .
-    # 如果需要使用其他镜像源，可以取消下面这行注释并修改为相应的镜像地址
     image: tgszy/strm-poller:master
     container_name: strm-poller
     restart: unless-stopped
-    # 支持桥接模式，默认使用bridge网络
-    # 注释掉host网络模式，改为使用默认的bridge网络并正确映射端口
-    # network_mode: "host"
-    ports:
-      - "35455:35455"  # 默认端口映射，用户可以修改冒号前的数字来自定义外部端口
-    # 网络配置，确保容器可以被主机网络访问
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-      - "docker.for.win.localhost:host-gateway"  # Windows Docker兼容性
+    network_mode: host  # 使用host网络模式，直接使用主机网络栈
     volumes:
-      # 配置目录：包含数据库、配置文件和日志
-      # Windows路径示例: - C:\path\to\config:/config
       - ./config:/config
-      # 源目录：包含.strm文件的目录，建议设置为只读
-      # 请根据您的环境修改下面的路径
-      # Windows路径示例: - C:\path\to\src:/src:ro
       - ./src_files:/src:ro
-      # 目标目录：整理后的媒体文件将存放在这里
-      # 请根据您的环境修改下面的路径
-      # Windows路径示例: - C:\path\to\dst:/dst
       - ./dst_files:/dst
-      # 可自定义添加更多源目录和目标目录映射
-      # 例如：
-      # - ./other_source:/src2:ro
-      # - ./other_destination:/dst2
     environment:
-      # 用户权限设置
-      - PUID=1000
-      - PGID=1000
-      # 时区设置
       - TZ=Asia/Shanghai
-      # 内存限制 (MB)
       - MAX_MEMORY=1024
-      # 代理设置
       - PROXY_ENABLED=false
-      - PROXY_URL=
-      # 日志级别
       - LOG_LEVEL=INFO
-      # 网络模式设置
-      - BRIDGE_MODE=true
-      # 容器环境标识
       - DOCKER_ENV=true
-      # 明确指定绑定IP（虽然代码中已强制使用0.0.0.0）
       - CUSTOM_BIND_IP=0.0.0.0
-    # 容器内存限制
     mem_limit: 1g
     memswap_limit: 1g
     healthcheck:
@@ -59,17 +29,61 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
-    labels:
-      - "com.centurylinklabs.watchtower.enable=false"
-      - "traefik.enable=false"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
-  # 可选：自动更新容器
-  watchtower:
-    image: containrrr/watchtower
-    container_name: watchtower
-    restart: unless-stopped
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    command: --interval 86400 --label-enable --cleanup
-    labels:
-      - "com.centurylinklabs.watchtower.enable=false"
+# 模式2: Bridge网络模式
+# 如果需要使用bridge模式，请将以下内容复制到一个新文件docker-compose-bridge.yml中使用
+# docker-compose -f docker-compose-bridge.yml up -d
+#
+# version: '3'
+# services:
+#   strm-poller:
+#     build: .
+#     image: tgszy/strm-poller:master
+#     container_name: strm-poller
+#     restart: unless-stopped
+#     networks:
+#       - strm_network
+#     ports:
+#       - "35455:35455"  # bridge模式下的端口映射
+#     volumes:
+#       - ./config:/config
+#       - ./src_files:/src:ro
+#       - ./dst_files:/dst
+#     environment:
+#       - TZ=Asia/Shanghai
+#       - MAX_MEMORY=1024
+#       - PROXY_ENABLED=false
+#       - LOG_LEVEL=INFO
+#       - DOCKER_ENV=true
+#       - CUSTOM_BIND_IP=0.0.0.0
+#     mem_limit: 1g
+#     memswap_limit: 1g
+#     healthcheck:
+#       test: ["CMD", "curl", "-f", "http://localhost:35455/api/health"]
+#       interval: 30s
+#       timeout: 10s
+#       retries: 3
+#       start_period: 40s
+#     logging:
+#       driver: json-file
+#       options:
+#         max-size: "10m"
+#         max-file: "3"
+#
+# networks:
+#   strm_network:
+#     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.18.0.0/16
+          gateway: 172.18.0.1
+    # 优化网络性能的额外参数
+    driver_opts:
+      com.docker.network.bridge.enable_icc: "true"  # 启用容器间通信
+      com.docker.network.bridge.enable_ip_masquerade: "true"  # 启用IP伪装
+      com.docker.network.bridge.host_binding_ipv4: "0.0.0.0"  # 绑定到所有接口

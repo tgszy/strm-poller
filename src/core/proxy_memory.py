@@ -1,11 +1,17 @@
 import asyncio
 import aiohttp
-import resource
 import psutil
 import logging
+import platform
 from typing import Dict, Optional, Any, List
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+
+# 尝试导入resource模块（仅Unix/Linux系统可用）
+try:
+    import resource
+except ImportError:
+    resource = None
 
 logger = logging.getLogger(__name__)
 
@@ -171,6 +177,11 @@ class MemoryManager:
         
     def set_memory_limit(self):
         """设置内存限制"""
+        # 仅在Unix/Linux系统上设置内存限制
+        if not resource:
+            logger.warning("内存限制功能仅在Unix/Linux系统上可用")
+            return False
+            
         try:
             # 设置进程的内存限制
             resource.setrlimit(resource.RLIMIT_AS, (self.max_memory_bytes, self.max_memory_bytes))

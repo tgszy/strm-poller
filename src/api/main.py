@@ -8,6 +8,7 @@ import os
 import socket
 import datetime
 from pathlib import Path
+import uvicorn
 
 from ..core.config import settings
 from ..core.logger import logger
@@ -83,111 +84,205 @@ class MemoryConfigModel(BaseModel):
     warning_threshold: float = 0.8
     critical_threshold: float = 0.95
 
-# 静态文件服务 - 自动查找多个可能的静态文件目录
+# 静态文件服务配置
 static_dirs = [
-    Path(__file__).parent / "static",
-    Path(__file__).parent.parent / "static",
-    Path("/src/static"),
+    Path(os.environ.get("STATIC_FILE_PATH", "./src/static")),  # 从环境变量获取
+    Path("./src/static"),
     Path("/app/src/static"),
-    Path("/app/static")
+    Path("/static")
 ]
 
-# 尝试挂载存在的静态文件目录
+# 初始化静态文件目录状态变量
 static_dir_found = False
-for static_dir in static_dirs:
-    if static_dir.exists() and os.access(static_dir, os.R_OK):
-        logger.info(f"挂载静态文件目录: {static_dir}")
-        app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
-        static_dir_found = True
-        break
+static_dirs_info = []
 
+# 检查每个静态目录是否存在且可读
+for static_dir in static_dirs:
+    try:
+        static_dir_info = {
+            "path": str(static_dir),
+            "exists": static_dir.exists(),
+            "is_dir": static_dir.is_dir() if static_dir.exists() else False,
+            "readable": os.access(str(static_dir), os.R_OK) if static_dir.exists() else False,
+            "content": []
+        }
+        
+        if static_dir.exists() and static_dir.is_dir():
+            try:
+                # 获取目录中的主要文件，限制数量以避免日志过大
+                static_dir_info["content"] = sorted([
+                    f for f in os.listdir(static_dir)
+                    if os.path.isfile(os.path.join(static_dir, f))
+                ][:10])
+                
+                # 找到有效的静态目录
+                if not static_dir_found:
+                    logger.info(f"找到有效的静态文件目录: {static_dir}")
+                    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+                    static_dir_found = True
+            except Exception as e:
+                logger.warning(f"无法访问静态目录 {static_dir}: {str(e)}")
+                static_dir_info["error"] = str(e)
+        
+        static_dirs_info.append(static_dir_info)
+    except Exception as e:
+        logger.error(f"检查静态目录 {static_dir} 时出错: {str(e)}")
+
+# 如果没有找到有效的静态目录，创建临时目录
 if not static_dir_found:
-    logger.warning("未找到有效的静态文件目录，WebUI可能无法正常工作")
+    temp_static_dir = Path("./temp_static")
+    try:
+        # 创建临时静态目录
+        temp_static_dir.mkdir(parents=True, exist_ok=True)
+        logger.warning(f"未找到静态文件目录，创建临时目录: {temp_static_dir}")
+        
+        # 创建基本的HTML文件
+        temp_html_path = temp_static_dir / "index.html"
+        with open(temp_html_path, "w", encoding="utf-8") as f:
+            f.write(f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STRM Poller - 临时页面</title>
+    <style>
+        body {{
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }}
+        h1, h2 {{ color: #2c3e50; }}
+        .warning {{ color: #e74c3c; }}
+        .info {{ color: #3498db; }}
+        .debug-info {{ background: #fff; padding: 15px; border-radius: 5px; margin: 10px 0; }}
+    </style>
+</head>
+<body>
+    <h1>STRM Poller</h1>
+    <h2 class="warning">静态文件未找到 - 临时页面</h2>
+    
+    <div class="info">
+        <p>服务器正在运行，但未找到WebUI静态文件。</p>
+        <p>这可能是因为:</p>
+        <ul>
+            <li>WebUI文件尚未生成或部署</li>
+            <li>静态文件路径配置错误</li>
+            <li>权限问题</li>
+        </ul>
+    </div>
+    
+    <div class="debug-info">
+        <h3>调试信息:</h3>
+        <p>服务地址: http://{settings.host}:{settings.port}</p>
+        <p>环境: {{"Docker容器" if os.environ.get('DOCKER_ENV', 'false').lower() == 'true' or os.path.exists('/.dockerenv') else '本地环境'}}</p>
+        <p>尝试的静态目录:</p>
+        <ul>
+            {"\n            ".join([f"<li>{d['path']} - {d['exists'] and '存在' or '不存在'}</li>" for d in static_dirs_info])}
+        </ul>
+    </div>
+    
+    <p>您仍然可以通过API访问功能。请确保正确部署WebUI文件。</p>
+</body>
+</html>
+""")
+        
+        # 挂载临时目录
+        app.mount("/static", StaticFiles(directory=str(temp_static_dir)), name="static")
+        static_dir_found = True
+        logger.info(f"已挂载临时静态文件目录: {temp_static_dir}")
+    except Exception as e:
+        logger.error(f"创建临时静态目录失败: {str(e)}")
 
 def get_all_network_addresses():
-    """获取所有网络接口的IP地址，支持识别本地IP和桥接模式"""
+    """获取所有网络接口的IP地址"""
     addresses = []
     try:
         # 获取主机名
         hostname = socket.gethostname()
         logger.debug(f"当前主机名: {hostname}")
         
-        # 获取所有网络接口的IP地址
-        logger.debug(f"尝试方法1: 通过socket.gethostbyname_ex获取IP地址")
-        host_ex_result = socket.gethostbyname_ex(hostname)
-        logger.debug(f"hostbyname_ex结果: {host_ex_result}")
-        
-        for ip in host_ex_result[2]:
-            # 过滤掉IPv6链路本地地址和环回地址
-            if not ip.startswith('127.') and not ip.startswith('fe80::'):
-                addresses.append(ip)
-                logger.debug(f"添加有效IP地址: {ip}")
-                # 特别标记本地网络地址(192.168.x.x)
-                if ip.startswith('192.168.'):
-                    logger.info(f"检测到本地网络IP地址: {ip}")
-        
-        # 如果没有找到除了环回以外的地址，尝试另一种方法
-        if not addresses:
-            logger.debug(f"方法1未找到有效地址，尝试方法2: 通过socket.getaddrinfo获取IP地址")
-            addrinfo_results = socket.getaddrinfo(hostname, None, socket.AF_INET)
-            logger.debug(f"getaddrinfo结果数量: {len(addrinfo_results)}")
-            
-            for res in addrinfo_results:
-                ip = res[4][0]
+        # 方法1: 通过socket.gethostbyname_ex获取IP地址
+        try:
+            host_ex_result = socket.gethostbyname_ex(hostname)
+            for ip in host_ex_result[2]:
+                # 过滤掉环回地址
                 if not ip.startswith('127.'):
                     addresses.append(ip)
-                    logger.debug(f"通过getaddrinfo添加IP地址: {ip}")
-                    if ip.startswith('192.168.'):
-                        logger.info(f"通过getaddrinfo检测到本地网络IP地址: {ip}")
+                    logger.debug(f"添加有效IP地址: {ip}")
+        except Exception as e:
+            logger.warning(f"hostbyname_ex获取失败: {e}")
         
-        # 尝试获取所有网络接口信息
+        # 方法2: 如果没有找到有效地址，尝试通过socket.getaddrinfo
+        if not addresses or all(ip.startswith('127.') for ip in addresses):
+            try:
+                addrinfo_results = socket.getaddrinfo(hostname, None, socket.AF_INET)
+                for res in addrinfo_results:
+                    ip = res[4][0]
+                    if not ip.startswith('127.'):
+                        addresses.append(ip)
+                        logger.debug(f"通过getaddrinfo添加IP地址: {ip}")
+            except Exception as e:
+                logger.warning(f"getaddrinfo获取失败: {e}")
+        
+        # 方法3: 尝试使用netifaces库获取网络接口信息
         try:
             import netifaces
-            logger.debug(f"尝试使用netifaces库获取网络接口信息")
             for interface in netifaces.interfaces():
                 addrs = netifaces.ifaddresses(interface)
-                # 检查IPv4地址
                 if netifaces.AF_INET in addrs:
                     for addr_info in addrs[netifaces.AF_INET]:
                         ip = addr_info.get('addr')
                         if ip and not ip.startswith('127.'):
                             addresses.append(ip)
                             logger.debug(f"通过netifaces添加接口 {interface} 的IP地址: {ip}")
-                            if ip.startswith('192.168.'):
-                                logger.info(f"通过netifaces检测到本地网络IP地址: {ip} (接口: {interface})")
-        except ImportError:
-            logger.debug(f"netifaces库未安装，跳过详细网络接口扫描")
-        except Exception as e:
-            logger.debug(f"使用netifaces获取网络接口信息失败: {e}")
+        except (ImportError, Exception) as e:
+            logger.debug(f"netifaces获取失败: {e}")
         
-        # 手动添加用户指定的IP地址（如果环境变量设置了）
+        # 添加自定义绑定IP（如果设置）
         custom_ip = os.environ.get('CUSTOM_BIND_IP')
         if custom_ip:
-            logger.info(f"检测到自定义绑定IP: {custom_ip} (通过环境变量设置)")
+            logger.info(f"检测到自定义绑定IP: {custom_ip}")
             addresses.append(custom_ip)
         
-        # 检查Docker桥接网络地址
+        # 从Docker网络配置获取网关IP
         try:
-            # 尝试获取Docker默认桥接网络地址
-            docker_bridge_ip = socket.gethostbyname('docker.for.win.localhost')
-            if docker_bridge_ip and docker_bridge_ip not in addresses:
-                addresses.append(docker_bridge_ip)
-                logger.info(f"检测到Docker桥接网络地址: {docker_bridge_ip}")
+            docker_gateway_ip = socket.gethostbyname('host.docker.internal')
+            if docker_gateway_ip and docker_gateway_ip not in addresses:
+                addresses.append(docker_gateway_ip)
+                logger.info(f"检测到Docker网关地址: {docker_gateway_ip}")
         except:
-            logger.debug(f"未检测到Docker桥接网络地址")
+            logger.debug(f"未检测到Docker网关地址")
+        
+        # 添加常见的Docker网络地址
+        common_docker_ips = [
+            '172.17.0.1',  # 默认Docker桥接网络
+            '172.18.0.1',  # 自定义网络(如果使用)
+        ]
+        for docker_ip in common_docker_ips:
+            if docker_ip not in addresses:
+                addresses.append(docker_ip)
+                logger.debug(f"添加常见Docker网络地址: {docker_ip}")
         
         # 去重并排序
         addresses = sorted(list(set(addresses)))
-        logger.debug(f"去重排序后的地址列表: {addresses}")
         
         # 添加localhost作为备用
-        addresses.insert(0, '127.0.0.1')
-        logger.debug(f"最终地址列表 (包含localhost): {addresses}")
+        if '127.0.0.1' not in addresses:
+            addresses.insert(0, '127.0.0.1')
+        
+        # 网络诊断信息
+        logger.info("\n=== 网络诊断 ===")
+        logger.info(f"检测到的IP地址: {', '.join(addresses)}")
         
     except Exception as e:
         logger.error(f"获取网络地址失败: {e}")
         import traceback
         logger.debug(f"详细错误信息: {traceback.format_exc()}")
+        # 确保即使失败也返回可用地址
         addresses = ['127.0.0.1']
     
     return addresses
@@ -209,32 +304,15 @@ async def startup_event():
     is_docker = os.environ.get('DOCKER_ENV', 'false').lower() == 'true' or os.path.exists('/.dockerenv')
     logger.info(f"运行环境: {'Docker容器' if is_docker else '本地环境'}")
     
-    # 检测桥接模式设置
-    bridge_mode = os.environ.get('BRIDGE_MODE', 'false').lower() == 'true'
-    logger.info(f"桥接模式: {'已启用' if bridge_mode else '未启用'}")
-    
     # 容器环境特殊提醒
     if is_docker:
         logger.info(f"容器环境注意事项:")
         logger.info(f"  1. 确保端口映射正确: -p {settings.port}:{settings.port}")
         logger.info(f"  2. 推荐使用host网络模式: --network=host")
-        logger.info(f"  3. 或使用extra_hosts确保主机访问: --add-host=host.docker.internal:host-gateway")
-        logger.info(f"  4. 桥接模式: 通过设置 BRIDGE_MODE=true 启用完整的桥接支持")
     
     # 防火墙提醒
     logger.info(f"防火墙设置提醒:")
-    logger.info(f"  - Windows: 请确保{settings.port}端口已在防火墙中开放")
-    logger.info(f"  - Linux: 请检查iptables规则确保端口可访问")
-    
-    # 特别提示本地网络访问
-    local_network_ips = [ip for ip in network_addresses if ip.startswith('192.168.') and ip != '127.0.0.1']
-    if local_network_ips:
-        logger.info(f"\n本地网络访问信息 (重要):")
-        logger.info(f"===================================")
-        for ip in local_network_ips:
-            logger.info(f"  本地网络访问地址: http://{ip}:{settings.port}")
-        logger.info(f"  桥接模式访问格式: http://[主机IP]:{settings.port}")
-        logger.info(f"===================================")
+    logger.info(f"  - 请确保{settings.port}端口已在防火墙中开放")
     
     logger.info(f"\n可通过以下所有IP地址访问WebUI:")
     for ip in network_addresses:
@@ -329,6 +407,7 @@ async def root():
         Path("/app/src/static/index.html"),  # 另一个可能的Docker容器路径
         Path("/app/static/index.html"),  # 另一个可能的容器路径
         Path("/static/index.html"),  # 直接从挂载点访问
+        Path("/config/static/index.html"),  # 临时WebUI路径
         Path(__file__).parent / "static" / "index.html",  # 另一个可能的相对路径
         # 额外添加的路径用于桥接模式支持
         Path("../static/index.html"),  # 相对路径支持
@@ -350,8 +429,14 @@ async def root():
         if not str(index_path).strip():
             continue
             
-        exists = index_path.exists()
-        is_readable = exists and os.access(index_path, os.R_OK)
+        exists = False
+        is_readable = False
+        try:
+            exists = index_path.exists()
+            is_readable = exists and os.access(index_path, os.R_OK)
+        except Exception as e:
+            logger.error(f"检查路径时出错 {index_path}: {str(e)}")
+            
         file_info = {
             "path": str(index_path),
             "exists": exists,
@@ -392,36 +477,84 @@ async def root():
                 file_info["error"] = error_msg
                 logger.error(error_msg)
     
-    # 所有路径都失败，返回详细错误信息，包含更多调试数据
-    logger.error("WebUI文件未找到或无法访问")
-    return JSONResponse(
-        status_code=503,
-        content={
-            "message": "STRM Poller API", 
-            "version": "3.0.0", 
-            "error": "WebUI not found or inaccessible",
-            "current_working_directory": current_dir,
-            "network_addresses": network_addresses,
-            "access_urls": [f"http://{ip}:{settings.port}" for ip in network_addresses],
-            "path_check_results": path_info,
-            "server_info": {
-                "host": settings.host,
-                "port": settings.port,
-                "debug": settings.debug,
-                "os": os.name,
-                "python_version": os.sys.version
-            },
-            "available_networks": {
-                "addresses": network_addresses,
-                "connection_hints": [
-                    "确保防火墙未阻止端口访问",
-                    "在桥接模式下检查网络配置",
-                    "尝试使用上面列出的IP地址访问",
-                    "检查Docker网络设置是否正确"
-                ]
+    # 如果所有路径都失败，尝试创建和返回一个简单的HTML响应
+    try:
+        # 直接生成HTML响应，不依赖外部文件
+        simple_html = f'''
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>STRM Poller - 管理界面</title>
+            <style>
+                body {{ font-family: Arial, sans-serif; margin: 40px; text-align: center; }}
+                h1 {{ color: #333; }}
+                .info {{ background: #f0f7ff; padding: 20px; border-radius: 8px; margin-top: 20px; }}
+                .warning {{ background: #fff9e6; padding: 20px; border-radius: 8px; margin-top: 10px; }}
+                .api-section {{ background: #e6f9e6; padding: 20px; border-radius: 8px; margin-top: 10px; }}
+                .debug-info {{ background: #f8f8f8; padding: 20px; border-radius: 8px; margin-top: 10px; text-align: left; }}
+                .path-list {{ max-height: 200px; overflow-y: auto; text-align: left; font-size: 12px; }}
+                a {{ color: #0066cc; text-decoration: none; }}
+                a:hover {{ text-decoration: underline; }}
+            </style>
+        </head>
+        <body>
+            <h1>STRM Poller 服务正在运行</h1>
+            <div class="info">
+                <p>服务已成功启动在端口 {settings.port}</p>
+                <p>可访问地址:</p>
+                <ul style="list-style-type: none; padding: 0;">
+                    {' '.join([f'<li><a href="http://{ip}:{settings.port}">http://{ip}:{settings.port}</a></li>' for ip in network_addresses])}
+                </ul>
+            </div>
+            <div class="api-section">
+                <h3>API访问:</h3>
+                <p><a href="/api/health">健康检查</a></p>
+                <p><a href="/api/tasks">任务列表</a></p>
+                <p>更多API端点请参考API文档</p>
+            </div>
+            <div class="warning">
+                <p>⚠️ 完整WebUI未找到，请检查静态文件目录配置</p>
+                <p>临时界面提供API访问入口</p>
+            </div>
+            <div class="debug-info">
+                <h3>调试信息:</h3>
+                <p><strong>工作目录:</strong> {current_dir}</p>
+                <p><strong>监听配置:</strong> {settings.host}:{settings.port}</p>
+                <div class="path-list">
+                    <p><strong>检查的路径:</strong></p>
+                    <ul>
+                        {' '.join([f'<li>{info["path"]} - 存在: {info["exists"]}, 可读: {info["readable"]}{" - " + info["error"] if info["error"] else ""}</li>' for info in path_info])}
+                    </ul>
+                </div>
+            </div>
+        </body>
+        </html>
+        '''
+        logger.info("返回内联生成的临时WebUI页面")
+        return HTMLResponse(content=simple_html)
+    except Exception as e:
+        logger.error(f"生成内联HTML页面失败: {e}")
+        
+        # 作为最后的备选，返回JSON响应
+        return JSONResponse(
+            status_code=503,
+            content={
+                "message": "STRM Poller API", 
+                "version": "3.0.0", 
+                "error": "WebUI not found or inaccessible",
+                "current_working_directory": current_dir,
+                "network_addresses": network_addresses,
+                "access_urls": [f"http://{ip}:{settings.port}" for ip in network_addresses],
+                "path_check_results": path_info,
+                "server_info": {
+                    "host": settings.host,
+                    "port": settings.port,
+                    "debug": settings.debug,
+                    "os": os.name,
+                    "python_version": os.sys.version
+                }
             }
-        }
-    )
+        )
 
 @app.get("/api/health")
 async def health_check():
@@ -700,19 +833,26 @@ async def get_task_stats():
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket连接端点"""
-    await websocket.accept()
-    
-    # 创建消息队列
-    message_queue = asyncio.Queue()
-    await websocket_manager.connect(message_queue)
+    message_queue = None
+    send_task = None
+    receive_task = None
     
     try:
+        await websocket.accept()
+        logger.info(f"WebSocket连接已接受")
+        
+        # 创建消息队列
+        message_queue = asyncio.Queue()
+        await websocket_manager.connect(message_queue)
+        logger.debug(f"WebSocket客户端已连接到消息管理器")
+        
         # 创建发送和接收任务
         async def send_messages():
             while True:
                 try:
                     message = await asyncio.wait_for(message_queue.get(), timeout=1.0)
                     await websocket.send_json(message)
+                    message_queue.task_done()
                 except asyncio.TimeoutError:
                     continue
                 except Exception as e:
@@ -726,17 +866,30 @@ async def websocket_endpoint(websocket: WebSocket):
                     # 处理客户端消息
                     if data.get("type") == "ping":
                         await websocket.send_json({"type": "pong"})
+                    logger.debug(f"WebSocket收到客户端消息: {data.get('type')}")
                 except Exception as e:
                     logger.error(f"WebSocket接收消息失败: {e}")
                     break
         
         # 并发运行发送和接收任务
-        await asyncio.gather(send_messages(), receive_messages())
+        send_task = asyncio.create_task(send_messages())
+        receive_task = asyncio.create_task(receive_messages())
+        
+        await asyncio.gather(send_task, receive_task)
         
     except WebSocketDisconnect:
         logger.info("WebSocket客户端断开连接")
+    except Exception as e:
+        logger.error(f"WebSocket连接发生异常: {e}")
     finally:
-        websocket_manager.disconnect(message_queue)
+        # 确保资源正确清理
+        if send_task:
+            send_task.cancel()
+        if receive_task:
+            receive_task.cancel()
+        if message_queue:
+            websocket_manager.disconnect(message_queue)
+        logger.info("WebSocket资源已清理")
 
 @app.get("/api/network/addresses")
 async def get_network_addresses():
@@ -829,119 +982,66 @@ async def get_network_addresses():
     }
 
 if __name__ == "__main__":
-    import uvicorn
-    import socket
-    
-    # 获取所有可用的网络地址并记录
-    network_addresses = get_all_network_addresses()
-    # 强制使用'0.0.0.0'以确保在容器环境中绑定到所有网络接口
-    host = '0.0.0.0'
-    
-    # 检测环境设置
-    is_docker = os.environ.get('DOCKER_ENV', 'false').lower() == 'true' or os.path.exists('/.dockerenv')
-    bridge_mode = os.environ.get('BRIDGE_MODE', 'false').lower() == 'true'
-    custom_ip = os.environ.get('CUSTOM_BIND_IP')
-    
-    # 添加详细的启动日志
-    logger.info("=== STRM Poller 服务启动配置 ===")
-    logger.info(f"使用uvicorn启动应用: host={host}, port={settings.port}")
-    logger.info(f"WebUI配置为监听所有网络接口 (0.0.0.0)")
-    logger.info(f"运行环境检测: {'Docker容器' if is_docker else '本地环境'}")
-    logger.info(f"桥接模式: {'已启用' if bridge_mode else '未启用'}")
-    
-    # 特别标记本地网络地址
-    local_network_ips = [ip for ip in network_addresses if ip.startswith('192.168.') and ip != '127.0.0.1']
-    if local_network_ips:
-        logger.info(f"\n🔍 检测到本地网络IP地址 (192.168.x.x):")
-        for ip in local_network_ips:
-            logger.info(f"   http://{ip}:{settings.port}")
-        logger.info(f"   请使用以上地址从本地网络访问WebUI")
-    else:
-        logger.info(f"\n⚠️  未检测到本地网络IP地址 (192.168.x.x)")
-        logger.info(f"   请检查网络连接或使用以下地址:")
-        
-    # 显示所有可能的访问地址
-    logger.info(f"\n📡 所有可用的访问地址:")
-    for ip in network_addresses:
-        logger.info(f"   - http://{ip}:{settings.port}")
-    
-    # 容器环境特殊说明
-    if is_docker:
-        logger.info("\n=== Docker环境配置说明 ===")
-        logger.info(f"容器内部访问地址: http://127.0.0.1:{settings.port}")
-        logger.info(f"主机映射访问格式: -p {settings.port}:{settings.port}")
-        logger.info(f"推荐使用host网络模式: --network=host")
-        logger.info(f"或添加主机访问: --add-host=host.docker.internal:host-gateway")
-        
-        # 桥接模式特殊说明
-        if bridge_mode:
-            logger.info("\n=== 桥接模式配置 ===")
-            logger.info("桥接模式已启用，配置参数:")
-            logger.info(f"  - 外部访问格式: http://[主机IP]:{settings.port}")
-            logger.info(f"  - 例如: http://192.168.0.111:{settings.port}")
-            logger.info(f"  - 确保端口映射正确: -p {settings.port}:{settings.port}")
-            logger.info("  - 桥接模式允许从同一网络的其他设备访问")
+    # 打印运行配置提示
+    logger.info("\n=== 运行配置指南 ===")
+    logger.info("推荐使用以下Docker命令启动:")
+    logger.info("  # Host模式 (推荐)")
+    logger.info("  docker run -d")
+    logger.info("    --name strm-poller")
+    logger.info("    --network=host")
+    logger.info("    -v $(pwd)/config:/config")
+    logger.info("    -v $(pwd)/media:/media")
+    logger.info("    --restart unless-stopped")
+    logger.info("    strm-poller:latest")
+    logger.info("")
+    logger.info("  # Bridge模式")
+    logger.info("  docker run -d")
+    logger.info("    --name strm-poller")
+    logger.info("    -p 35455:35455")
+    logger.info("    -v $(pwd)/config:/config")
+    logger.info("    -v $(pwd)/media:/media")
+    logger.info("    --restart unless-stopped")
+    logger.info("    strm-poller:latest")
+    logger.info("")
+    logger.info("  # 注意: Bridge模式下端口映射为 35455:35455")
+    logger.info("  # Host模式下直接使用端口 35455")
     
     # 防火墙配置提醒
-    logger.info("\n=== 防火墙配置提醒 ===")
-    logger.info(f"请确保端口 {settings.port} 已在防火墙中开放")
-    if os.name == 'nt':  # Windows系统
-        logger.info(f"Windows防火墙命令: netsh advfirewall firewall add rule name=\"STRM Poller\" dir=in action=allow protocol=TCP localport={settings.port} remoteip=any profile=any")
-    else:  # Linux系统
-        logger.info(f"Linux防火墙命令: sudo ufw allow {settings.port}/tcp")
+    logger.info("\n=== 防火墙配置 ===")
+    logger.info(f"  - 请确保{settings.port}端口已在防火墙中开放")
+    logger.info("  - 对于Windows系统: 检查Windows Defender防火墙设置")
+    logger.info("  - 对于Linux系统: 使用ufw或iptables开放端口")
     
     # 网络诊断信息
-    logger.info("\n=== 网络诊断信息 ===")
+    logger.info("\n=== 网络诊断 ===")
+    # 端口测试
     try:
-        # 测试端口是否可用
-        test_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        test_socket.settimeout(2)
-        test_socket.bind((host, settings.port))
-        test_socket.close()
-        logger.info(f"✅ 端口 {settings.port} 可用，绑定测试成功")
-    except Exception as e:
-        logger.error(f"❌ 端口 {settings.port} 绑定测试失败: {e}")
-        logger.error(f"  请检查端口是否已被占用或权限不足")
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            result = s.connect_ex(("127.0.0.1", settings.port))
+            port_status = "✅ 端口可用" if result != 0 else "❌ 端口可能被占用"
+    except:
+        port_status = "⚠️  无法检测端口状态"
+    logger.info(f"  端口状态: {port_status}")
     
-    # 获取网络接口信息
+    # 网络连接测试
     try:
-        logger.info(f"\n📊 网络连接测试:")
-        for ip in network_addresses:
-            try:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(1)
-                result = sock.connect_ex((ip, settings.port))
-                status = "✅ 可连接" if result == 0 else "❌ 服务未启动"
-                logger.info(f"   - IP: {ip}, 端口: {settings.port}, 状态: {status}")
-                sock.close()
-            except Exception as e:
-                logger.info(f"   - IP: {ip}, 状态检查失败: {e}")
-    except Exception as e:
-        logger.debug(f"获取网络接口状态失败: {e}")
+        socket.create_connection(("www.google.com", 80), timeout=5)
+        net_status = "✅ 网络连接正常"
+    except:
+        net_status = "⚠️  网络连接可能存在问题"
+    logger.info(f"  网络状态: {net_status}")
     
-    # 显示用户指南
-    logger.info("\n=== 用户访问指南 ===")
-    logger.info(f"1. 如果您的设备IP是 192.168.0.111，请使用以下地址访问:")
-    logger.info(f"   http://192.168.0.111:{settings.port}")
-    logger.info(f"2. 确保防火墙已开放{settings.port}端口")
-    logger.info(f"3. Docker运行时请使用: docker run -p {settings.port}:{settings.port} strm-poller")
-    logger.info(f"4. 启用桥接模式: docker run -p {settings.port}:{settings.port} -e BRIDGE_MODE=true strm-poller")
+    # 启动uvicorn服务器
+    logger.info("\n=== 启动服务器 ===")
+    logger.info(f"  启动STRM Poller 服务...")
     
-    logger.info("\n=== 启动服务 ===")
-    
-    # 显式配置uvicorn参数以确保正确绑定所有网络接口和桥接模式支持
+    # 启动uvicorn服务器
     uvicorn.run(
-        app,
-        host=host,  # 直接使用'0.0.0.0'而不是settings.host
+        "src.api.main:app",
+        host=settings.host,
         port=settings.port,
-        log_level="debug",  # 提高日志级别以帮助调试
-        access_log=True,  # 启用访问日志以帮助调试连接问题
-        reload=False,      # 生产环境禁用自动重载
-        forwarded_allow_ips="*",  # 允许所有IP通过代理访问，确保容器环境正常工作
-        interface="",  # 让uvicorn自动处理接口绑定
-        backlog=2048,  # 增加连接队列大小
-        workers=1,  # 单工作进程，避免多进程绑定问题
-        # 桥接模式特定配置
-        limit_concurrency=1000 if bridge_mode else None,  # 桥接模式下增加并发限制
-        timeout_keep_alive=30 if bridge_mode else None  # 桥接模式下优化keep-alive时间
+        log_level="info" if not settings.debug else "debug",
+        workers=1,
+        timeout_keep_alive=60,
+        timeout_graceful_shutdown=5
     )

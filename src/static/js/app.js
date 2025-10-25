@@ -6,43 +6,78 @@ class APIClient {
         this.wsMaxReconnectAttempts = 5;
         this.wsReconnectAttempts = 0;
         this.baseURL = window.location.origin;
+        this.reconnectTimeout = null;
         this.initWebSocket();
     }
 
     initWebSocket() {
-        const wsUrl = `ws://${window.location.host}/ws`;
-        this.ws = new WebSocket(wsUrl);
+        // 根据当前页面协议自动选择ws或wss
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${wsProtocol}//${window.location.host}/ws`;
+        console.log('正在连接WebSocket:', wsUrl);
         
-        this.ws.onopen = () => {
-            console.log('WebSocket连接已建立');
-            this.wsReconnectAttempts = 0;
-            this.showNotification('WebSocket连接已建立', 'success');
-        };
+        try {
+            this.ws = new WebSocket(wsUrl);
+            
+            this.ws.onopen = () => {
+                console.log('WebSocket连接已建立');
+                this.wsReconnectAttempts = 0;
+                this.showNotification('WebSocket连接已建立', 'success');
+            };
 
-        this.ws.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            this.handleWebSocketMessage(data);
-        };
+            this.ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    this.handleWebSocketMessage(data);
+                } catch (e) {
+                    console.error('WebSocket消息解析失败:', e, '原始消息:', event.data);
+                }
+            };
 
-        this.ws.onclose = () => {
-            console.log('WebSocket连接已关闭');
-            this.reconnectWebSocket();
-        };
+            this.ws.onclose = (event) => {
+                console.log('WebSocket连接已关闭:', event.code, event.reason);
+                this.reconnectWebSocket();
+            };
 
-        this.ws.onerror = (error) => {
-            console.error('WebSocket错误:', error);
-            this.showNotification('WebSocket连接错误', 'error');
-        };
+            this.ws.onerror = (error) => {
+                console.error('WebSocket错误:', error);
+                this.showNotification('WebSocket连接错误，正在重试...', 'error');
+            };
+        } catch (e) {
+            console.error('创建WebSocket连接失败:', e);
+            this.showNotification('无法创建WebSocket连接', 'error');
+            // 确保触发重连机制
+            setTimeout(() => {
+                this.reconnectWebSocket();
+            }, 1000);
+        }
     }
 
     reconnectWebSocket() {
         if (this.wsReconnectAttempts < this.wsMaxReconnectAttempts) {
             this.wsReconnectAttempts++;
-            console.log(`WebSocket重连尝试 ${this.wsReconnectAttempts}/${this.wsMaxReconnectAttempts}`);
-            setTimeout(() => {
+            // 使用指数退避策略，避免频繁重连
+            const delay = Math.min(1000 * Math.pow(2, this.wsReconnectAttempts - 1), 30000); // 最大30秒
+            console.log(`WebSocket重连尝试 ${this.wsReconnectAttempts}/${this.wsMaxReconnectAttempts}，延迟${delay}ms...`);
+            
+            // 清除之前可能存在的重连计时器
+            if (this.reconnectTimeout) {
+                clearTimeout(this.reconnectTimeout);
+            }
+            
+            this.reconnectTimeout = setTimeout(() => {
+                // 确保之前的连接已关闭
+                if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+                    try {
+                        this.ws.close();
+                    } catch (e) {
+                        console.error('关闭旧WebSocket连接失败:', e);
+                    }
+                }
                 this.initWebSocket();
-            }, this.wsReconnectInterval);
+            }, delay);
         } else {
+            console.log('WebSocket重连失败，已达到最大重试次数');
             this.showNotification('WebSocket连接失败，请刷新页面重试', 'error');
         }
     }
@@ -63,28 +98,65 @@ class APIClient {
         }
     }
 
-    async request(endpoint, options = {}) {
+    async request(endpoint, options = {}, retryCount = 0) {
+        const MAX_RETRIES = 2;
+        const TIMEOUT = 10000; // 10秒超时
         const url = `${this.baseURL}/api${endpoint}`;
-        const config = {
-            ...options,
-            headers: {
-                'Content-Type': 'application/json',
-                ...options.headers
-            }
-        };
-
+        
         try {
-            const response = await fetch(url, config);
-            const data = await response.json();
+            // 添加超时处理
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), TIMEOUT);
             
-            if (!response.ok) {
-                throw new Error(data.detail || '请求失败');
+            const config = {
+                ...options,
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...options.headers
+                },
+                signal: controller.signal
+            };
+
+            console.log('正在请求API:', url);
+            const response = await fetch(url, config);
+            
+            clearTimeout(timeoutId); // 清除超时
+            
+            try {
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.detail || `请求失败，状态码: ${response.status}`);
+                }
+                
+                return data;
+            } catch (jsonError) {
+                console.error('JSON解析错误:', jsonError);
+                // 如果无法解析JSON，返回文本内容
+                const text = await response.text();
+                throw new Error(`响应解析失败: ${response.status} ${text}`);
+            }
+        } catch (error) {
+            if (error.name === 'AbortError') {
+                console.error('API请求超时:', endpoint);
+                this.showNotification('API请求超时，服务可能不可用', 'error');
+                throw new Error('API请求超时');
             }
             
-            return data;
-        } catch (error) {
-            console.error('API请求错误:', error);
-            this.showNotification(error.message, 'error');
+            console.error(`API请求错误: ${error.message}`);
+            
+            // 重试逻辑 - 仅对网络错误重试
+            if (retryCount < MAX_RETRIES && !error.message.includes('请求失败') && !error.message.includes('响应解析失败')) {
+                retryCount++;
+                const delay = 1000 * Math.pow(2, retryCount - 1);
+                console.log(`尝试重试请求 (${retryCount}/${MAX_RETRIES})，延迟${delay}ms...`);
+                
+                await new Promise(resolve => setTimeout(resolve, delay));
+                return this.request(endpoint, options, retryCount);
+            }
+            
+            // 显示用户友好的错误消息
+            this.showNotification(`API请求失败: ${error.message}`, 'error');
             throw error;
         }
     }
