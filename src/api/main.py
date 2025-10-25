@@ -1029,7 +1029,7 @@ if __name__ == "__main__":
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             result = s.connect_ex(("127.0.0.1", settings.port))
-            port_status = "✅ 端口可用" if result != 0 else "❌ 端口可能被占用"
+        port_status = "✅ 端口可用" if result != 0 else "❌ 端口可能被占用"  # connect_ex返回0表示连接成功(端口被占用)
     except:
         port_status = "⚠️  无法检测端口状态"
     logger.info(f"  端口状态: {port_status}")

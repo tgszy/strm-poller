@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 class Settings(BaseSettings):
     # 服务器配置
     host: str = "0.0.0.0"
-    port: int = 35455  # 容器内部默认端口
+    port: int = 35455  # 默认端口35455，与配置文件和Docker保持一致
     debug: bool = False
     
     # 路径配置 - 支持从环境变量读取，增加灵活性
