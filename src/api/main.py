@@ -138,8 +138,16 @@ if not static_dir_found:
         
         # 创建基本的HTML文件
         temp_html_path = temp_static_dir / "index.html"
-        with open(temp_html_path, "w", encoding="utf-8") as f:
-            f.write(f"""<!DOCTYPE html>
+        # 生成静态目录HTML内容的辅助函数
+        def get_static_dirs_html(dirs_info):
+            items = []
+            for d in dirs_info:
+                status = '存在' if d['exists'] else '不存在'
+                items.append(f"<li>{d['path']} - {status}</li>")
+            return '\n            '.join(items)
+        
+        # 写入HTML内容
+        html_content = f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -178,17 +186,20 @@ if not static_dir_found:
     <div class="debug-info">
         <h3>调试信息:</h3>
         <p>服务地址: http://{settings.host}:{settings.port}</p>
-        <p>环境: {{"Docker容器" if os.environ.get('DOCKER_ENV', 'false').lower() == 'true' or os.path.exists('/.dockerenv') else '本地环境'}}</p>
+        <p>环境: {"Docker容器" if os.environ.get('DOCKER_ENV', 'false').lower() == 'true' or os.path.exists('/.dockerenv') else '本地环境'}</p>
         <p>尝试的静态目录:</p>
         <ul>
-            {"\n            ".join(["<li>{path} - {status}</li>".format(path=d['path'], status='存在' if d['exists'] else '不存在') for d in static_dirs_info])}
+            {get_static_dirs_html(static_dirs_info)}
         </ul>
     </div>
     
     <p>您仍然可以通过API访问功能。请确保正确部署WebUI文件。</p>
 </body>
 </html>
-""")
+"""
+        
+        with open(temp_html_path, "w", encoding="utf-8") as f:
+            f.write(html_content)
         
         # 挂载临时目录
         app.mount("/static", StaticFiles(directory=str(temp_static_dir)), name="static")
