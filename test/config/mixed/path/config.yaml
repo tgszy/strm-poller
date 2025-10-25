@@ -1,0 +1,19 @@
+# STRM Poller 默认配置文件
+server:
+  host: "0.0.0.0"
+  port: 35455
+  debug: false
+
+paths:
+  config_path: "test\config\mixed\path"
+  src_path: "\src"
+  dst_path: "\dst"
+
+# 数据库配置
+database:
+  sqlite_path: "test\config\mixed\path\strm-poller.db"
+
+# 日志配置
+logging:
+  level: "INFO"
+  file: "test\config\mixed\path\logs\strm-poller.log"

@@ -1,6 +1,12 @@
 from pydantic_settings import BaseSettings
 from typing import Optional, List, Dict
 import os
+import json
+import logging
+
+# 设置日志
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class Settings(BaseSettings):
     # 服务器配置
@@ -123,20 +129,146 @@ class Settings(BaseSettings):
         env_file = ".env"
         case_sensitive = False
 
+    def load_config_from_file(self):
+        """加载配置文件，支持YAML格式"""
+        # 尝试多种配置文件格式
+        config_files = [
+            os.path.join(self.config_path, "config.yaml"),
+            os.path.join(self.config_path, "config.yml"),
+            os.path.join(self.config_path, "config.json")  # 处理错误提示中的JSON文件
+        ]
+        
+        for config_file in config_files:
+            logger.info(f"尝试加载配置文件: {config_file}")
+            if os.path.exists(config_file):
+                try:
+                    if config_file.endswith('.yaml') or config_file.endswith('.yml'):
+                        # 尝试导入PyYAML
+                        try:
+                            import yaml
+                            with open(config_file, 'r', encoding='utf-8') as f:
+                                config_data = yaml.safe_load(f)
+                            logger.info(f"成功加载YAML配置文件: {config_file}")
+                            return config_data
+                        except ImportError:
+                            logger.warning("PyYAML未安装，无法加载YAML配置")
+                    elif config_file.endswith('.json'):
+                        # 即使使用JSON文件，也尝试优雅处理
+                        with open(config_file, 'r', encoding='utf-8') as f:
+                            config_data = json.load(f)
+                        logger.info(f"成功加载JSON配置文件: {config_file}")
+                        return config_data
+                except Exception as e:
+                    logger.error(f"加载配置文件 {config_file} 失败: {str(e)}")
+            else:
+                logger.info(f"配置文件不存在: {config_file}")
+        
+        # 如果没有找到配置文件，创建默认配置文件
+        self._create_default_config()
+        return None
+    
+    def _create_default_config(self):
+        """创建默认配置文件"""
+        default_config_path = os.path.join(self.config_path, "config.yaml")
+        try:
+            # 确保配置目录存在
+            os.makedirs(self.config_path, exist_ok=True)
+            
+            # 生成默认配置内容
+            default_config = """
+# STRM Poller 默认配置文件
+server:
+  host: "0.0.0.0"
+  port: 35455
+  debug: false
+
+paths:
+  config_path: "%(config_path)s"
+  src_path: "%(src_path)s"
+  dst_path: "%(dst_path)s"
+
+# 数据库配置
+database:
+  sqlite_path: "%(sqlite_path)s"
+
+# 日志配置
+logging:
+  level: "INFO"
+  file: "%(log_file)s"
+            """
+            
+            # 填充路径变量
+            default_config = default_config % {
+                'config_path': self.config_path,
+                'src_path': self.src_path,
+                'dst_path': self.dst_path,
+                'sqlite_path': self.sqlite_path,
+                'log_file': self.log_file
+            }
+            
+            # 写入默认配置文件
+            with open(default_config_path, 'w', encoding='utf-8') as f:
+                f.write(default_config.strip())
+            
+            logger.info(f"已创建默认配置文件: {default_config_path}")
+            
+            # 同时创建一个空的config.json文件以避免错误
+            empty_json_path = os.path.join(self.config_path, "config.json")
+            with open(empty_json_path, 'w', encoding='utf-8') as f:
+                f.write("{}\n")
+            logger.info(f"已创建空的config.json文件: {empty_json_path}")
+            
+        except Exception as e:
+            logger.error(f"创建默认配置文件失败: {str(e)}")
+    
     def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        # 确保路径使用正确的分隔符，支持Windows和Linux环境下的路径处理
-        self.config_path = os.path.normpath(self.config_path)
-        self.src_path = os.path.normpath(self.src_path)
-        self.dst_path = os.path.normpath(self.dst_path)
-        
-        # 更新依赖于config_path的路径，确保路径正确拼接
-        self.sqlite_path = os.path.join(self.config_path, "strm-poller.db")
-        
-        # 确保日志目录存在，自动创建必要的目录结构
-        log_dir = os.path.join(self.config_path, "logs")
-        os.makedirs(log_dir, exist_ok=True)
-        self.log_file = os.path.join(log_dir, "strm-poller.log")
+        try:
+            super().__init__(**kwargs)
+            # 确保路径使用正确的分隔符，支持Windows和Linux环境下的路径处理
+            self.config_path = os.path.normpath(self.config_path)
+            self.src_path = os.path.normpath(self.src_path)
+            self.dst_path = os.path.normpath(self.dst_path)
+            
+            logger.info(f"配置路径设置: config_path={self.config_path}, src_path={self.src_path}, dst_path={self.dst_path}")
+            
+            # 更新依赖于config_path的路径，确保路径正确拼接
+            self.sqlite_path = os.path.join(self.config_path, "strm-poller.db")
+            logger.info(f"SQLite数据库路径: {self.sqlite_path}")
+            
+            # 确保日志目录存在，自动创建必要的目录结构
+            try:
+                log_dir = os.path.join(self.config_path, "logs")
+                os.makedirs(log_dir, exist_ok=True)
+                self.log_file = os.path.join(log_dir, "strm-poller.log")
+                logger.info(f"日志文件路径: {self.log_file}")
+            except Exception as e:
+                logger.error(f"创建日志目录失败: {str(e)}")
+                # 回退到临时目录
+                self.log_file = "/tmp/strm-poller.log"
+                logger.warning(f"回退到临时日志文件: {self.log_file}")
+            
+            # 检查配置目录权限
+            if not os.access(self.config_path, os.W_OK):
+                logger.warning(f"配置目录 {self.config_path} 无写权限")
+            
+            # 加载配置文件（如果存在）
+            config_data = self.load_config_from_file()
+            if config_data:
+                # 可以在这里处理加载的配置数据
+                logger.info("配置文件已加载")
+                
+        except Exception as e:
+            logger.error(f"初始化配置时出错: {str(e)}")
+            import traceback
+            logger.error(f"详细错误信息: {traceback.format_exc()}")
+            # 使用默认值继续运行
+            self.host = "0.0.0.0"
+            self.port = 35455
+            self.config_path = os.environ.get("CONFIG_PATH", "/config")
+            self.src_path = os.environ.get("SRC_PATH", "/src")
+            self.dst_path = os.environ.get("DST_PATH", "/dst")
+            self.sqlite_path = os.path.join(self.config_path, "strm-poller.db")
+            self.log_file = os.path.join(self.config_path, "strm-poller.log")
 
 # 全局设置实例
 settings = Settings()

@@ -2,6 +2,7 @@
 
 # 模式1: Host网络模式（推荐）
 # 使用方法: docker-compose -f docker-compose.yml up -d
+# 注意: 在host模式下，应用程序会直接使用主机的35455端口
 version: '3'
 services:
   strm-poller:
@@ -49,7 +50,7 @@ services:
 #     networks:
 #       - strm_network
 #     ports:
-#       - "35455:35455"  # bridge模式下的端口映射
+#       - "35455:35455"  # 确保与代码中使用的35455端口保持一致
 #     volumes:
 #       - ./config:/config
 #       - ./src_files:/src:ro
@@ -78,12 +79,12 @@ services:
 # networks:
 #   strm_network:
 #     driver: bridge
-    ipam:
-      config:
-        - subnet: 172.18.0.0/16
-          gateway: 172.18.0.1
-    # 优化网络性能的额外参数
-    driver_opts:
-      com.docker.network.bridge.enable_icc: "true"  # 启用容器间通信
-      com.docker.network.bridge.enable_ip_masquerade: "true"  # 启用IP伪装
-      com.docker.network.bridge.host_binding_ipv4: "0.0.0.0"  # 绑定到所有接口
+#     ipam:
+#       config:
+#         - subnet: 172.18.0.0/16
+#           gateway: 172.18.0.1
+#     # 优化网络性能的额外参数
+#     driver_opts:
+#       com.docker.network.bridge.enable_icc: "true"  # 启用容器间通信
+#       com.docker.network.bridge.enable_ip_masquerade: "true"  # 启用IP伪装
+#       com.docker.network.bridge.host_binding_ipv4: "0.0.0.0"  # 绑定到所有接口

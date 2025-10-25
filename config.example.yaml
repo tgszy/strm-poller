@@ -4,7 +4,7 @@
 # 服务器配置
 server:
   host: "0.0.0.0"
-  port: 3456
+  port: 35455  # 与代码和Docker配置保持一致
   debug: false
 
 # 路径配置

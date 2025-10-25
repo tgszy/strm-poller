@@ -35,18 +35,18 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY src/ ./src/
 
 # 创建必要的目录
-RUN mkdir -p /app/data /app/logs /app/config && \
-    chown -R appuser:appuser /app
+RUN mkdir -p /app/data /app/logs /config && \
+    chown -R appuser:appuser /app /config
 
 # 切换到非root用户
 USER appuser
 
 # 暴露端口
-EXPOSE 3456
+EXPOSE 35455
 
 # 健康检查
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:3456/api/health || exit 1
+    CMD curl -f http://localhost:35455/api/health || exit 1
 
 # 启动命令
-CMD ["python", "-m", "uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "3456", "--log-level", "info"]
+CMD ["python", "-m", "uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "35455", "--log-level", "info"]
