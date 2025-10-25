@@ -3,6 +3,7 @@
 # 模式1: Host网络模式（推荐）
 # 使用方法: docker-compose -f docker-compose.yml up -d
 # 注意: 在host模式下，应用程序会直接使用主机的35455端口
+# 重要提示: 在host网络模式下，不需要设置ports端口映射，容器会直接使用主机网络栈
 version: '3'
 services:
   strm-poller:
@@ -37,8 +38,9 @@ services:
         max-file: "3"
 
 # 模式2: Bridge网络模式
-# 如果需要使用bridge模式，请将以下内容复制到一个新文件docker-compose-bridge.yml中使用
+# 如果需要使用bridge模式，请使用已有的docker-compose-bridge.yml文件
 # docker-compose -f docker-compose-bridge.yml up -d
+# 注意: Bridge模式需要设置ports端口映射，如"35455:35455"
 #
 # version: '3'
 # services:

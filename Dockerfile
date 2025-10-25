@@ -34,6 +34,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 复制应用代码
 COPY src/ ./src/
 
+# 确保静态文件目录存在并复制所有静态文件
+RUN mkdir -p /app/src/static/js
+COPY src/static/ ./src/static/
+COPY src/static/js/ ./src/static/js/
+
 # 创建必要的目录
 RUN mkdir -p /app/data /app/logs /config && \
     chown -R appuser:appuser /app /config

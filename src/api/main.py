@@ -87,9 +87,10 @@ class MemoryConfigModel(BaseModel):
 # 静态文件服务配置
 static_dirs = [
     Path(os.environ.get("STATIC_FILE_PATH", "./src/static")),  # 从环境变量获取
-    Path("./src/static"),
-    Path("/app/src/static"),
-    Path("/static")
+    Path("./src/static"),  # 本地开发环境路径
+    Path("/app/src/static"),  # Docker容器内路径
+    Path("/static"),  # 可选的挂载路径
+    Path(Path(__file__).parent.parent / "static")  # 基于当前文件位置的动态路径
 ]
 
 # 初始化静态文件目录状态变量
@@ -411,20 +412,19 @@ async def shutdown_event():
 @app.get("/")
 async def root():
     """根路径，返回WebUI - 增强的桥接模式支持"""
-    # 尝试多个可能的静态文件路径，适应不同环境和桥接模式
+    # 优化的静态文件路径列表，按优先级排序
     possible_paths = [
-        Path(__file__).parent.parent / "static" / "index.html",  # 开发环境路径
-        Path("/src/static/index.html"),  # Docker容器内路径
-        Path("/app/src/static/index.html"),  # 另一个可能的Docker容器路径
-        Path("/app/static/index.html"),  # 另一个可能的容器路径
-        Path("/static/index.html"),  # 直接从挂载点访问
-        Path("/config/static/index.html"),  # 临时WebUI路径
-        Path(__file__).parent / "static" / "index.html",  # 另一个可能的相对路径
-        # 额外添加的路径用于桥接模式支持
-        Path("../static/index.html"),  # 相对路径支持
-        Path("./static/index.html"),  # 当前目录下的静态文件夹
-        Path(os.environ.get("STATIC_FILE_PATH", "") + "/index.html")  # 环境变量指定的路径
+        Path(__file__).parent.parent / "static" / "index.html",  # 开发环境路径(优先级最高)
+        Path(os.environ.get("STATIC_FILE_PATH", "") + "/index.html") if os.environ.get("STATIC_FILE_PATH") else None,  # 环境变量指定的路径
+        Path("/app/src/static/index.html"),  # Docker容器内标准路径
+        Path("/src/static/index.html"),  # 另一个可能的Docker路径
+        Path("./src/static/index.html"),  # 相对路径
+        Path("/static/index.html"),  # 可选的挂载路径
+        Path("/app/static/index.html")  # 备用容器路径
     ]
+    
+    # 过滤掉None值
+    possible_paths = [path for path in possible_paths if path]
     
     # 获取当前工作目录信息，用于调试
     current_dir = os.getcwd()
