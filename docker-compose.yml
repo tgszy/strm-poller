@@ -6,7 +6,7 @@ version: '3'
 services:
   strm-poller:
     build: .
-    image: tgszy/strm-poller:master
+    image: tgszy/strm-poller:latest
     container_name: strm-poller
     restart: unless-stopped
     network_mode: host  # 使用host网络模式，直接使用主机网络栈
