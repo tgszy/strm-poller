@@ -1,9 +1,8 @@
 # 使用Python 3.11 Alpine作为基础镜像
-    FROM python:3.11-alpine
-    
-    # 设置pip镜像源为国内源
-    RUN pip config set global.index-url https://mirrors.163.com/pypi/simple/
-    RUN pip config set global.trusted-host mirrors.163.com
+FROM python:3.11-alpine
+
+# 设置pip镜像源为官方源（避免国内镜像源不稳定问题）
+# RUN pip config set global.index-url https://pypi.org/simple/
 
 # 设置工作目录
 WORKDIR /app
@@ -23,6 +22,16 @@ RUN apk add --no-cache \
     openssl-dev \
     sqlite-dev \
     curl \
+    libxml2-dev \
+    libxslt-dev \
+    jpeg-dev \
+    zlib-dev \
+    freetype-dev \
+    lcms2-dev \
+    openjpeg-dev \
+    tiff-dev \
+    tk-dev \
+    tcl-dev \
     && rm -rf /var/cache/apk/*
 
 # 创建非root用户
