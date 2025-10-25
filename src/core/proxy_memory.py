@@ -177,9 +177,9 @@ class MemoryManager:
         
     def set_memory_limit(self):
         """设置内存限制"""
-        # 仅在Unix/Linux系统上设置内存限制
-        if not resource:
-            logger.warning("内存限制功能仅在Unix/Linux系统上可用")
+        # 检查操作系统类型，仅在Unix/Linux系统上设置内存限制
+        if platform.system() in ['Windows', 'Darwin'] or not resource:
+            logger.warning(f"内存限制功能在当前系统({platform.system()})上不可用，仅在Unix/Linux系统上支持")
             return False
             
         try:
