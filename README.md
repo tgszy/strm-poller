@@ -28,7 +28,7 @@
 ```bash
 docker run -d \
   --name=strm-poller \
-  -p 3456:3456 \
+  -p 35455:35455 \
   # 配置目录：包含数据库、配置文件和日志
   -v /mnt/user/appdata/strm-poller:/config \
   # 源目录：包含.strm文件的目录，建议设置为只读
@@ -55,7 +55,7 @@ docker run -d \
 ```powershell
 docker run -d `
   --name=strm-poller `
-  -p 3456:3456 `
+  -p 35455:35455 `
   -v ${pwd}\appdata\strm-poller:/config `
   -v D:\path\to\aliyun:/src:ro `
   -v D:\path\to\emby:/dst `
@@ -83,17 +83,17 @@ services:
     container_name: strm-poller
     restart: unless-stopped
     ports:
-      - "3456:3456"
+      - "35455:35455"
     volumes:
-      # 配置目录：包含数据库、配置文件和日志
-      # Windows路径示例: - C:\path\to\config:/config
-      - ./config:/config
-      # 源目录：包含.strm文件的目录，建议设置为只读
-      # Windows路径示例: - C:\path\to\src:/src:ro
-      - /path/to/src:/src:ro
-      # 目标目录：整理后的媒体文件将存放在这里
-      # Windows路径示例: - C:\path\to\dst:/dst
-      - /path/to/dst:/dst
+        # 配置目录：包含数据库、配置文件和日志
+        # Windows路径示例: - C:\path\to\config:/config
+        - ./config:/config
+        # 源目录：包含.strm文件的目录，建议设置为只读
+        # Windows路径示例: - C:\path\to\src:/src:ro
+        - ./src:/src:ro
+        # 目标目录：整理后的媒体文件将存放在这里
+        # Windows路径示例: - C:\path\to\dst:/dst
+        - ./dst:/dst
       # 可自定义添加更多源目录和目标目录映射
       # 例如：
       # - ./other_source:/src2:ro
@@ -115,7 +115,7 @@ services:
     mem_limit: 1g
     memswap_limit: 1g
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3456/api/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:35455/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -132,8 +132,8 @@ docker-compose up -d
 | 本地路径 | 容器路径 | 说明 | 建议权限 |
 |---------|---------|------|--------|
 | `./config` | `/config` | 配置文件、数据库和日志目录 | 读写 |
-| `/path/to/src` | `/src` | 包含.strm文件的源目录 | 只读 (`:ro`) |
-| `/path/to/dst` | `/dst` | 整理后的媒体文件目标目录 | 读写 |
+| `./src` | `/src` | 包含.strm文件的源目录 | 只读 (`:ro`) |
+| `./dst` | `/dst` | 整理后的媒体文件目标目录 | 读写 |
 
 ### 自定义多路径映射
 
@@ -143,7 +143,7 @@ docker-compose up -d
 ```bash
 docker run -d \
   --name strm-poller \
-  -p 3456:3456 \
+  -p 35455:35455 \
   -v ./config:/config \
   -v /path/to/source1:/src:ro \
   -v /path/to/source2:/src2:ro \
@@ -185,7 +185,7 @@ docker run -d \
 
 容器启动成功后，可以通过以下地址访问后台页面：
 ```
-http://localhost:3456
+http://localhost:35455
 ```
 
 如果在远程服务器或NAS上运行，可以使用对应设备的IP地址代替 `localhost`。

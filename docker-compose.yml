@@ -14,8 +14,8 @@ services:
     network_mode: host  # 使用host网络模式，直接使用主机网络栈
     volumes:
       - ./config:/config
-      - ./src_files:/src:ro
-      - ./dst_files:/dst
+      - ./src:/src:ro
+      - ./dst:/dst
     environment:
       - TZ=Asia/Shanghai
       - MAX_MEMORY=1024
@@ -55,8 +55,8 @@ services:
 #       - "35455:35455"  # 确保与代码中使用的35455端口保持一致
 #     volumes:
 #       - ./config:/config
-#       - ./src_files:/src:ro
-#       - ./dst_files:/dst
+#       - ./src:/src:ro
+#       - ./dst:/dst
 #     environment:
 #       - TZ=Asia/Shanghai
 #       - MAX_MEMORY=1024
