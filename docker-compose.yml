@@ -3,7 +3,7 @@ services:
     # 使用本地构建的镜像替代GitHub Container Registry
     build: .
     # 如果需要使用其他镜像源，可以取消下面这行注释并修改为相应的镜像地址
-    # image: tgszy/strm-poller:latest
+    image: tgszy/strm-poller:master
     container_name: strm-poller
     restart: unless-stopped
     # 支持桥接模式，默认使用bridge网络
@@ -44,6 +44,12 @@ services:
       - PROXY_URL=
       # 日志级别
       - LOG_LEVEL=INFO
+      # 网络模式设置
+      - BRIDGE_MODE=true
+      # 容器环境标识
+      - DOCKER_ENV=true
+      # 明确指定绑定IP（虽然代码中已强制使用0.0.0.0）
+      - CUSTOM_BIND_IP=0.0.0.0
     # 容器内存限制
     mem_limit: 1g
     memswap_limit: 1g
@@ -54,7 +60,7 @@ services:
       retries: 3
       start_period: 40s
     labels:
-      - "com.centurylinklabs.watchtower.enable=true"
+      - "com.centurylinklabs.watchtower.enable=false"
       - "traefik.enable=false"
 
   # 可选：自动更新容器
