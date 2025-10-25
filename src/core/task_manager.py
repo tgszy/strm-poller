@@ -127,7 +127,7 @@ class TaskManager:
             self.task_workers[task_id] = task_worker
             
             # 异步执行任务
-            await task_worker.execute()
+            asyncio.create_task(task_worker.execute())
             
             logger.info(f"启动任务成功: {task.name} (ID: {task_id})")
             
