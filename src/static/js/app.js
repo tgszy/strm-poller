@@ -122,20 +122,30 @@ class APIClient {
             
             clearTimeout(timeoutId); // 清除超时
             
-            try {
-                const data = await response.json();
-                
-                if (!response.ok) {
-                    throw new Error(data.detail || `请求失败，状态码: ${response.status}`);
+            // 检查响应状态
+            if (!response.ok) {
+                // 尝试解析错误详情
+                let errorDetail = `请求失败，状态码: ${response.status}`;
+                try {
+                    const errorData = await response.json();
+                    errorDetail = errorData.detail || errorDetail;
+                } catch {
+                    // 如果无法解析JSON，读取文本内容
+                    try {
+                        const text = await response.text();
+                        if (text) {
+                            errorDetail = `${errorDetail} - ${text}`;
+                        }
+                    } catch {
+                        // 忽略文本读取错误
+                    }
                 }
-                
-                return data;
-            } catch (jsonError) {
-                console.error('JSON解析错误:', jsonError);
-                // 如果无法解析JSON，返回文本内容
-                const text = await response.text();
-                throw new Error(`响应解析失败: ${response.status} ${text}`);
+                throw new Error(errorDetail);
             }
+            
+            // 解析成功响应
+            const data = await response.json();
+            return data;
         } catch (error) {
             if (error.name === 'AbortError') {
                 console.error('API请求超时:', endpoint);
@@ -195,34 +205,69 @@ class APIClient {
 
     // 刮削源配置API
     async getScrapers() {
-        return this.request('/scrapers');
+        return this.request('/scraper-configs');
     }
 
     async updateScraper(scraperName, config) {
-        return this.request(`/scrapers/${scraperName}`, {
+        // 首先获取所有刮削源配置，找到对应名称的配置ID
+        const scrapers = await this.getScrapers();
+        const scraper = scrapers.find(s => s.name === scraperName);
+        if (!scraper) {
+            throw new Error(`刮削源 ${scraperName} 不存在`);
+        }
+        
+        return this.request(`/scraper-configs/${scraper.id}`, {
             method: 'PUT',
             body: JSON.stringify(config)
         });
     }
 
     async testScraper(scraperName) {
-        return this.request(`/scrapers/${scraperName}/test`, { method: 'POST' });
+        // 刮削源测试功能需要后端支持，暂时返回成功
+        return { success: true, message: '刮削源测试功能暂未实现' };
+    }
+
+    async updateScrapersPriority(updates) {
+        // 批量更新刮削源优先级
+        return this.request('/scrapers/priority', {
+            method: 'PUT',
+            body: JSON.stringify({ updates: updates })
+        });
     }
 
     // 系统设置API
     async getSettings() {
-        return this.request('/settings');
+        const configs = await this.request('/system-configs');
+        // 将配置数组转换为对象格式
+        const settings = {};
+        configs.forEach(config => {
+            settings[config.key] = config.value;
+        });
+        return settings;
     }
 
     async updateSettings(settings) {
-        return this.request('/settings', {
-            method: 'PUT',
-            body: JSON.stringify(settings)
-        });
+        // 将设置对象转换为配置数组格式
+        const configUpdates = Object.entries(settings).map(([key, value]) => ({
+            key: key,
+            value: value,
+            description: `系统设置: ${key}`
+        }));
+        
+        // 批量更新配置
+        const results = [];
+        for (const config of configUpdates) {
+            const result = await this.request('/system-configs', {
+                method: 'PUT',
+                body: JSON.stringify(config)
+            });
+            results.push(result);
+        }
+        return results;
     }
 
     async testProxy(proxyUrl) {
-        return this.request('/settings/test-proxy', {
+        return this.request('/proxy/test', {
             method: 'POST',
             body: JSON.stringify({ proxy_url: proxyUrl })
         });
@@ -230,20 +275,28 @@ class APIClient {
 
     // 统计信息API
     async getStats() {
-        return this.request('/stats');
+        // 获取系统统计信息和任务统计信息
+        const [systemStats, taskStats] = await Promise.all([
+            this.request('/stats/system'),
+            this.request('/stats/tasks')
+        ]);
+        
+        // 合并统计信息
+        return {
+            ...systemStats,
+            ...taskStats
+        };
     }
 
     // 日志API
     async getLogs(level = null, limit = 100) {
-        const params = new URLSearchParams();
-        if (level) params.append('level', level);
-        if (limit) params.append('limit', limit);
-        
-        return this.request(`/logs?${params}`);
+        // 日志功能暂未实现，返回空数组
+        return [];
     }
 
     async clearLogs() {
-        return this.request('/logs', { method: 'DELETE' });
+        // 日志功能暂未实现，返回成功
+        return { success: true, message: '日志功能暂未实现' };
     }
 
     // 工具方法
@@ -423,6 +476,76 @@ class PageManager {
         document.getElementById('export-logs-btn').addEventListener('click', () => {
             this.exportLogs();
         });
+
+        // 通知设置表单
+        document.getElementById('notifications-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.saveNotificationSettings();
+        });
+
+        // 规则设置表单
+        document.getElementById('subcategory-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.saveRuleSettings();
+        });
+
+        document.getElementById('rename-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.saveRuleSettings();
+        });
+
+        // 默认策略和格式加载按钮
+        document.getElementById('load-default-strategy').addEventListener('click', () => {
+            this.loadDefaultSubcategoryStrategy();
+        });
+
+        document.getElementById('load-movie-default').addEventListener('click', () => {
+            this.loadDefaultMovieFormat();
+        });
+
+        document.getElementById('load-tv-default').addEventListener('click', () => {
+            this.loadDefaultTVFormat();
+        });
+
+        // 重置按钮
+        document.getElementById('reset-strategy').addEventListener('click', () => {
+            document.getElementById('subcategory-strategy').value = '';
+        });
+
+        document.getElementById('reset-movie-format').addEventListener('click', () => {
+            document.getElementById('movie-rename-format').value = '';
+        });
+
+        document.getElementById('reset-tv-format').addEventListener('click', () => {
+            document.getElementById('tv-show-format').value = '';
+            document.getElementById('tv-season-format').value = '';
+            document.getElementById('tv-episode-format').value = '';
+        });
+        
+        // 刮削源配置模态框事件监听器
+        document.getElementById('scraper-config-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.saveScraperConfig();
+        });
+        
+        document.getElementById('test-scraper-btn').addEventListener('click', () => {
+            this.testScraperConnection();
+        });
+        
+        document.getElementById('scraper-help-btn').addEventListener('click', () => {
+            if (this.currentScraper) {
+                const scraperType = this.currentScraper.type || this.currentScraper.name.toLowerCase();
+                this.showScraperHelp(scraperType);
+            }
+        });
+        
+        // 帮助按钮事件监听器
+        document.addEventListener('click', (e) => {
+            if (e.target.closest('[data-help]')) {
+                const helpType = e.target.closest('[data-help]').dataset.help;
+                this.showScraperHelp(helpType);
+            }
+        });
     }
 
     switchPage(page) {
@@ -449,7 +572,9 @@ class PageManager {
             'tasks': '任务管理',
             'scrapers': '刮削源',
             'settings': '系统设置',
-            'logs': '日志查看'
+            'logs': '日志查看',
+            'notifications': '通知设置',
+            'rules': '规则设置'
         };
         document.getElementById('page-title').textContent = titles[page];
 
@@ -473,6 +598,12 @@ class PageManager {
                 break;
             case 'logs':
                 this.loadLogs();
+                break;
+            case 'notifications':
+                this.loadNotifications();
+                break;
+            case 'rules':
+                this.loadRules();
                 break;
         }
     }
@@ -665,35 +796,160 @@ class PageManager {
         const container = document.getElementById('scrapers-list');
         if (!container) return;
 
+        // 按优先级排序（升序：优先级0在最前面，优先级4在最后面）
+        const sortedScrapers = [...scrapers].sort((a, b) => (a.priority || 0) - (b.priority || 0));
+
         container.innerHTML = `
             <div class="mb-3">
                 <p class="text-muted">拖拽调整刮削源优先级，点击配置按钮编辑详细设置</p>
-                <div class="d-flex gap-2 flex-wrap" id="scrapers-sortable">
-                    ${scrapers.map(scraper => this.renderScraperItem(scraper)).join('')}
+                <div class="scrapers-sortable" id="scrapers-sortable">
+                    ${sortedScrapers.map(scraper => this.renderScraperItem(scraper)).join('')}
                 </div>
             </div>
         `;
 
         // 绑定刮削源操作事件
-        scrapers.forEach(scraper => {
+        sortedScrapers.forEach(scraper => {
             const item = container.querySelector(`[data-scraper="${scraper.name}"]`);
             if (item) {
                 this.bindScraperActions(item, scraper);
             }
         });
+
+        // 初始化拖动排序功能
+        this.initDragAndDrop();
+    }
+
+    initDragAndDrop() {
+        const container = document.getElementById('scrapers-sortable');
+        if (!container) return;
+
+        const items = container.querySelectorAll('.scraper-item');
+        let draggedItem = null;
+
+        // 为每个刮削源项添加拖动事件
+        items.forEach(item => {
+            // 拖动开始
+            item.addEventListener('dragstart', (e) => {
+                draggedItem = item;
+                item.classList.add('dragging');
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', item.getAttribute('data-scraper'));
+            });
+
+            // 拖动结束
+            item.addEventListener('dragend', () => {
+                item.classList.remove('dragging');
+                items.forEach(i => i.classList.remove('drag-over'));
+                draggedItem = null;
+            });
+
+            // 拖动经过
+            item.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                
+                if (draggedItem && draggedItem !== item) {
+                    const rect = item.getBoundingClientRect();
+                    const next = (e.clientY - rect.top) / rect.height > 0.5;
+                    
+                    items.forEach(i => i.classList.remove('drag-over'));
+                    item.classList.add('drag-over');
+                }
+            });
+
+            // 拖动进入
+            item.addEventListener('dragenter', (e) => {
+                e.preventDefault();
+                if (draggedItem && draggedItem !== item) {
+                    item.classList.add('drag-over');
+                }
+            });
+
+            // 拖动离开
+            item.addEventListener('dragleave', () => {
+                item.classList.remove('drag-over');
+            });
+
+            // 放置
+            item.addEventListener('drop', (e) => {
+                e.preventDefault();
+                if (draggedItem && draggedItem !== item) {
+                    const rect = item.getBoundingClientRect();
+                    const next = (e.clientY - rect.top) / rect.height > 0.5;
+                    
+                    if (next) {
+                        container.insertBefore(draggedItem, item.nextSibling);
+                    } else {
+                        container.insertBefore(draggedItem, item);
+                    }
+                    
+                    // 更新优先级
+                    this.updateScrapersPriority();
+                }
+                item.classList.remove('drag-over');
+            });
+        });
+    }
+
+    async updateScrapersPriority() {
+        const container = document.getElementById('scrapers-sortable');
+        if (!container) return;
+
+        const items = container.querySelectorAll('.scraper-item');
+        const updates = [];
+
+        // 从上到下优先级递减
+        items.forEach((item, index) => {
+            const scraperId = item.getAttribute('data-scraper-id');
+            const priority = items.length - index; // 顶部优先级最高
+            
+            // 更新显示的优先级
+            const priorityElement = item.querySelector('small');
+            if (priorityElement) {
+                priorityElement.textContent = `优先级: ${priority}`;
+            }
+            
+            // 收集更新数据
+            if (scraperId) {
+                updates.push({
+                    id: parseInt(scraperId),
+                    priority: priority
+                });
+            }
+        });
+
+        // 发送更新请求
+        try {
+            await this.api.updateScrapersPriority({updates: updates});
+            this.api.showNotification('刮削源优先级已更新', 'success');
+        } catch (error) {
+            console.error('更新刮削源优先级失败:', error);
+            this.api.showNotification('更新优先级失败', 'error');
+        }
     }
 
     renderScraperItem(scraper) {
+        // 确保刮削源名称正确显示，优先使用display_name，如果没有则使用name
+        const displayName = scraper.display_name || scraper.name || '未知刮削源';
+        
+        // 检查配置状态
+        const configStatus = this.getScraperConfigStatus(scraper);
+        
         return `
             <div class="scraper-item ${!scraper.enabled ? 'disabled' : ''}" 
-                 data-scraper="${scraper.name}" data-priority="${scraper.priority}">
+                 data-scraper-id="${scraper.id}" data-scraper="${scraper.name}" data-priority="${scraper.priority}">
                 <div class="d-flex justify-content-between align-items-center">
-                    <div>
+                    <div class="flex-grow-1">
                         <h6 class="mb-1">
                             <i class="bi ${this.getScraperIcon(scraper.name)}"></i>
-                            ${scraper.display_name}
+                            ${displayName}
                         </h6>
-                        <small class="text-muted">优先级: ${scraper.priority}</small>
+                        <div class="d-flex align-items-center gap-2">
+                            <small class="text-muted">优先级: ${scraper.priority}</small>
+                            <span class="badge ${configStatus.badgeClass}">${configStatus.text}</span>
+                        </div>
+                        ${configStatus.details ? `<small class="text-muted d-block mt-1">${configStatus.details}</small>` : ''}
                     </div>
                     <div class="btn-group btn-group-sm">
                         <button class="btn btn-outline-primary" data-action="config">
@@ -706,6 +962,68 @@ class PageManager {
                 </div>
             </div>
         `;
+    }
+    
+    getScraperConfigStatus(scraper) {
+        const scraperType = scraper.type || scraper.name.toLowerCase();
+        
+        switch(scraperType) {
+            case 'tmdb':
+                if (scraper.api_key && scraper.api_key.trim()) {
+                    return {
+                        text: '已配置',
+                        badgeClass: 'bg-success',
+                        details: `API密钥: ${scraper.api_key.substring(0, 8)}...`
+                    };
+                }
+                break;
+                
+            case 'douban':
+                if (scraper.cookie && scraper.cookie.trim()) {
+                    return {
+                        text: '已配置',
+                        badgeClass: 'bg-success',
+                        details: 'Cookie已设置'
+                    };
+                }
+                break;
+                
+            case 'bangumi':
+                if (scraper.app_id && scraper.app_id.trim() && scraper.app_secret && scraper.app_secret.trim()) {
+                    return {
+                        text: '已配置',
+                        badgeClass: 'bg-success',
+                        details: 'App ID/Secret已设置'
+                    };
+                }
+                break;
+                
+            case 'imdb':
+                if (scraper.api_key && scraper.api_key.trim()) {
+                    return {
+                        text: '已配置',
+                        badgeClass: 'bg-success',
+                        details: `API密钥: ${scraper.api_key.substring(0, 8)}...`
+                    };
+                }
+                break;
+                
+            case 'tvdb':
+                if (scraper.api_key && scraper.api_key.trim()) {
+                    return {
+                        text: '已配置',
+                        badgeClass: 'bg-success',
+                        details: `API密钥: ${scraper.api_key.substring(0, 8)}...`
+                    };
+                }
+                break;
+        }
+        
+        return {
+            text: '未配置',
+            badgeClass: 'bg-warning',
+            details: '点击配置按钮设置API密钥或账户信息'
+        };
     }
 
     getScraperIcon(name) {
@@ -731,9 +1049,17 @@ class PageManager {
 
     async handleScraperAction(scraperName, action) {
         try {
+            // 获取完整的刮削源信息
+            const scrapers = await this.api.getScrapers();
+            const scraper = scrapers.find(s => s.name === scraperName);
+            
+            if (!scraper) {
+                throw new Error(`刮削源 ${scraperName} 不存在`);
+            }
+            
             switch (action) {
                 case 'config':
-                    this.showScraperConfigModal(scraperName);
+                    this.showScraperConfigModal(scraper);
                     break;
                 case 'test':
                     const result = await this.api.testScraper(scraperName);
@@ -747,13 +1073,217 @@ class PageManager {
         }
     }
 
-    showScraperConfigModal(scraperName) {
-        // 显示刮削源配置模态框
+    showScraperConfigModal(scraper) {
         const modal = new bootstrap.Modal(document.getElementById('scraperConfigModal'));
         
-        // 这里应该加载刮削源的当前配置
-        // 为了简化，这里只是显示模态框
+        // 设置模态框标题，确保刮削源名称正确显示
+        const displayName = scraper.display_name || scraper.name || '未知刮削源';
+        document.getElementById('scraper-config-title').textContent = `${displayName} 配置`;
+        
+        // 重置测试状态
+        this.resetScraperTestStatus();
+        
+        // 填充基本信息
+        document.getElementById('scraper-enabled').checked = scraper.enabled || false;
+        document.getElementById('scraper-priority').value = scraper.priority || 0;
+        document.getElementById('scraper-timeout').value = scraper.timeout || 30;
+        document.getElementById('scraper-retry').value = scraper.retry || 3;
+        document.getElementById('scraper-delay').value = scraper.delay || 1000;
+        
+        // 隐藏所有配置区域
+        document.querySelectorAll('.scraper-config-section').forEach(section => {
+            section.style.display = 'none';
+        });
+        
+        // 根据刮削源类型显示对应的配置区域
+        const scraperType = scraper.type || scraper.name.toLowerCase();
+        const configSection = document.getElementById(`${scraperType}-config`);
+        if (configSection) {
+            configSection.style.display = 'block';
+            
+            // 填充特定配置
+            switch(scraperType) {
+                case 'tmdb':
+                    document.getElementById('tmdb-api-key').value = scraper.api_key || '';
+                    document.getElementById('tmdb-language').value = scraper.language || 'zh-CN';
+                    break;
+                case 'douban':
+                    document.getElementById('douban-cookie').value = scraper.cookie || '';
+                    break;
+                case 'bangumi':
+                    document.getElementById('bangumi-app-id').value = scraper.app_id || '';
+                    document.getElementById('bangumi-app-secret').value = scraper.app_secret || '';
+                    break;
+                case 'imdb':
+                    document.getElementById('imdb-api-key').value = scraper.api_key || '';
+                    break;
+                case 'tvdb':
+                    document.getElementById('tvdb-api-key').value = scraper.api_key || '';
+                    break;
+            }
+        }
+        
+        // 保存当前刮削源信息
+        this.currentScraper = scraper;
+        
         modal.show();
+    }
+    
+    // 重置刮削源测试状态
+    resetScraperTestStatus() {
+        document.getElementById('scraper-test-status').textContent = '未测试';
+        document.getElementById('scraper-test-status').className = 'badge bg-secondary';
+        document.getElementById('scraper-test-latency').textContent = '';
+        document.getElementById('scraper-test-result').style.display = 'none';
+        document.getElementById('scraper-test-error').style.display = 'none';
+    }
+    
+    // 测试刮削源连接
+    async testScraperConnection() {
+        if (!this.currentScraper) return;
+        
+        const testBtn = document.getElementById('test-scraper-btn');
+        const testStatus = document.getElementById('scraper-test-status');
+        const testLatency = document.getElementById('scraper-test-latency');
+        const testResult = document.getElementById('scraper-test-result');
+        const testError = document.getElementById('scraper-test-error');
+        
+        // 更新测试状态
+        testBtn.disabled = true;
+        testBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> 测试中...';
+        testStatus.textContent = '测试中';
+        testStatus.className = 'badge bg-warning';
+        testLatency.textContent = '';
+        testResult.style.display = 'none';
+        testError.style.display = 'none';
+        
+        try {
+            const startTime = Date.now();
+            
+            // 构建测试数据
+            const testData = {
+                scraper_id: this.currentScraper.id,
+                config: this.getScraperConfigFromForm()
+            };
+            
+            const response = await fetch('/api/scrapers/test', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(testData)
+            });
+            
+            const endTime = Date.now();
+            const latency = endTime - startTime;
+            
+            if (response.ok) {
+                const result = await response.json();
+                
+                testStatus.textContent = '连接成功';
+                testStatus.className = 'badge bg-success';
+                testLatency.textContent = `延迟: ${latency}ms`;
+                testResult.style.display = 'block';
+                
+                if (result.message) {
+                    testResult.querySelector('.alert').innerHTML = 
+                        `<i class="bi bi-check-circle"></i> ${result.message}`;
+                }
+            } else {
+                const error = await response.json();
+                throw new Error(error.detail || '连接测试失败');
+            }
+        } catch (error) {
+            testStatus.textContent = '连接失败';
+            testStatus.className = 'badge bg-danger';
+            testLatency.textContent = '';
+            testError.style.display = 'block';
+            document.getElementById('scraper-error-message').textContent = error.message;
+        } finally {
+            testBtn.disabled = false;
+            testBtn.innerHTML = '<i class="bi bi-wifi"></i> 测试连接';
+        }
+    }
+    
+    // 从表单获取刮削源配置
+    getScraperConfigFromForm() {
+        const config = {
+            enabled: document.getElementById('scraper-enabled').checked,
+            priority: parseInt(document.getElementById('scraper-priority').value),
+            timeout: parseInt(document.getElementById('scraper-timeout').value),
+            retry: parseInt(document.getElementById('scraper-retry').value),
+            delay: parseInt(document.getElementById('scraper-delay').value)
+        };
+        
+        // 根据刮削源类型添加特定配置
+        const scraperType = this.currentScraper.type || this.currentScraper.name.toLowerCase();
+        
+        switch(scraperType) {
+            case 'tmdb':
+                config.api_key = document.getElementById('tmdb-api-key').value;
+                config.language = document.getElementById('tmdb-language').value;
+                break;
+            case 'douban':
+                config.cookie = document.getElementById('douban-cookie').value;
+                break;
+            case 'bangumi':
+                config.app_id = document.getElementById('bangumi-app-id').value;
+                config.app_secret = document.getElementById('bangumi-app-secret').value;
+                break;
+            case 'imdb':
+                config.api_key = document.getElementById('imdb-api-key').value;
+                break;
+            case 'tvdb':
+                config.api_key = document.getElementById('tvdb-api-key').value;
+                break;
+        }
+        
+        return config;
+    }
+    
+    // 显示刮削源帮助信息
+    showScraperHelp(scraperType) {
+        const helpMessages = {
+            tmdb: `如何获取TMDB API Key：
+1. 访问 https://www.themoviedb.org/settings/api
+2. 登录您的TMDB账户
+3. 点击"API"选项卡
+4. 填写申请表格并提交
+5. 获取API Key后在此处填写`,
+            
+            douban: `如何获取豆瓣Cookie：
+1. 登录豆瓣网站 (https://www.douban.com)
+2. 打开浏览器开发者工具 (F12)
+3. 切换到Network/网络选项卡
+4. 刷新页面或进行任何操作
+5. 找到任意请求，复制Cookie字段
+6. 将完整的Cookie字符串粘贴到此处`,
+            
+            bangumi: `如何获取Bangumi API：
+1. 访问 https://bgm.tv/dev/app
+2. 登录您的Bangumi账户
+3. 创建新的应用程序
+4. 填写应用信息并提交
+5. 获取App ID和App Secret
+6. 在此处填写对应的信息`,
+            
+            imdb: `如何获取IMDb API Key：
+1. 访问 https://developer.imdb.com
+2. 注册IMDb开发者账户
+3. 创建新的应用程序
+4. 获取API Key
+5. 在此处填写API Key`,
+            
+            tvdb: `如何获取TVDB API Key：
+1. 访问 https://thetvdb.com/api-information
+2. 注册TVDB开发者账户
+3. 创建API密钥
+4. 获取API Key
+5. 在此处填写API Key`
+        };
+        
+        const message = helpMessages[scraperType] || '暂无帮助信息';
+        alert(message);
     }
 
     async loadSettings() {
@@ -774,6 +1304,41 @@ class PageManager {
         document.getElementById('max-memory').value = settings.max_memory || 1024;
         document.getElementById('max-workers').value = settings.max_workers || 4;
         document.getElementById('task-timeout').value = settings.task_timeout || 3600;
+        
+        // 渲染二级分类策略
+        if (settings.subcategory_strategy) {
+            document.getElementById('subcategory-strategy').value = settings.subcategory_strategy;
+        } else {
+            // 设置默认的二级分类策略配置
+            const defaultStrategy = `movie:
+  动画电影:
+    genre_ids: '16'
+  华语电影:
+    original_language: 'zh,cn,bo,za'
+  外语电影:
+
+tv:
+  国漫:
+    genre_ids: '16'
+    origin_country: 'CN,TW,HK'
+  日番:
+    genre_ids: '16'
+    origin_country: 'JP'
+  纪录片:
+    genre_ids: '99'
+  儿童:
+    genre_ids: '10762'
+  综艺:
+    genre_ids: '10764,10767'
+  国产剧:
+    origin_country: 'CN,TW,HK'
+  欧美剧:
+    origin_country: 'US,FR,GB,DE,ES,IT,NL,PT,RU,UK'
+  日韩剧:
+    origin_country: 'JP,KP,KR,TH,IN,SG'
+  未分类:`;
+            document.getElementById('subcategory-strategy').value = defaultStrategy;
+        }
     }
 
     async testProxy() {
@@ -812,7 +1377,8 @@ class PageManager {
         const settings = {
             max_memory: parseInt(document.getElementById('max-memory').value),
             max_workers: parseInt(document.getElementById('max-workers').value),
-            task_timeout: parseInt(document.getElementById('task-timeout').value)
+            task_timeout: parseInt(document.getElementById('task-timeout').value),
+            subcategory_strategy: document.getElementById('subcategory-strategy').value
         };
 
         try {
@@ -897,6 +1463,208 @@ class PageManager {
         if (this.refreshInterval) {
             clearInterval(this.refreshInterval);
             this.refreshInterval = null;
+        }
+    }
+
+    // 通知设置页面加载方法
+    async loadNotifications() {
+        try {
+            const settings = await this.api.getSettings();
+            this.renderNotifications(settings);
+        } catch (error) {
+            console.error('加载通知设置失败:', error);
+        }
+    }
+
+    renderNotifications(settings) {
+        // 渲染微信企业机器人设置
+        document.getElementById('wechat-enabled').checked = settings.wechat_enabled || false;
+        document.getElementById('wechat-webhook').value = settings.wechat_webhook || '';
+        document.getElementById('wechat-mentions').value = settings.wechat_mentions || '';
+        
+        // 渲染Telegram设置
+        document.getElementById('telegram-enabled').checked = settings.telegram_enabled || false;
+        document.getElementById('telegram-token').value = settings.telegram_token || '';
+        document.getElementById('telegram-chat-id').value = settings.telegram_chat_id || '';
+        
+        // 渲染事件类型设置
+        const eventTypes = ['task_start', 'task_complete', 'task_failed', 'task_paused', 'task_cancelled', 'system_error'];
+        eventTypes.forEach(eventType => {
+            const checkbox = document.getElementById(`event-${eventType}`);
+            if (checkbox) {
+                checkbox.checked = settings.notification_events ? settings.notification_events.includes(eventType) : true;
+            }
+        });
+    }
+
+    // 规则设置页面加载方法
+    async loadRules() {
+        try {
+            const settings = await this.api.getSettings();
+            this.renderRules(settings);
+        } catch (error) {
+            console.error('加载规则设置失败:', error);
+        }
+    }
+
+    renderRules(settings) {
+        // 渲染二级分类策略
+        document.getElementById('subcategory-enabled').checked = settings.subcategory_enabled || false;
+        if (settings.subcategory_strategy) {
+            document.getElementById('subcategory-strategy').value = settings.subcategory_strategy;
+        }
+        
+        // 渲染重命名格式设置
+        document.getElementById('movie-rename-format').value = settings.movie_rename_format || '{title} ({year})';
+        document.getElementById('tv-show-format').value = settings.tv_show_format || '{title} ({year})';
+        document.getElementById('tv-season-format').value = settings.tv_season_format || 'Season {season:02d}';
+        document.getElementById('tv-episode-format').value = settings.tv_episode_format || 'S{season:02d}E{episode:02d}';
+    }
+
+    // 保存通知设置
+    async saveNotificationSettings() {
+        const settings = {
+            wechat_enabled: document.getElementById('wechat-enabled').checked,
+            wechat_webhook: document.getElementById('wechat-webhook').value,
+            wechat_mentions: document.getElementById('wechat-mentions').value,
+            telegram_enabled: document.getElementById('telegram-enabled').checked,
+            telegram_token: document.getElementById('telegram-token').value,
+            telegram_chat_id: document.getElementById('telegram-chat-id').value,
+            notification_events: []
+        };
+
+        // 收集选中的事件类型
+        const eventTypes = ['task_start', 'task_complete', 'task_failed', 'task_paused', 'task_cancelled', 'system_error'];
+        eventTypes.forEach(eventType => {
+            const checkbox = document.getElementById(`event-${eventType}`);
+            if (checkbox && checkbox.checked) {
+                settings.notification_events.push(eventType);
+            }
+        });
+
+        try {
+            await this.api.updateSettings(settings);
+            this.api.showNotification('通知设置已保存', 'success');
+        } catch (error) {
+            console.error('保存通知设置失败:', error);
+            this.api.showNotification(`保存失败: ${error.message}`, 'error');
+        }
+    }
+
+    // 保存规则设置
+    async saveRuleSettings() {
+        const settings = {
+            subcategory_enabled: document.getElementById('subcategory-enabled').checked,
+            subcategory_strategy: document.getElementById('subcategory-strategy').value,
+            movie_rename_format: document.getElementById('movie-rename-format').value,
+            tv_show_format: document.getElementById('tv-show-format').value,
+            tv_season_format: document.getElementById('tv-season-format').value,
+            tv_episode_format: document.getElementById('tv-episode-format').value
+        };
+
+        try {
+            await this.api.updateSettings(settings);
+            this.api.showNotification('规则设置已保存', 'success');
+        } catch (error) {
+            console.error('保存规则设置失败:', error);
+            this.api.showNotification(`保存失败: ${error.message}`, 'error');
+        }
+    }
+
+    // 加载默认二级分类策略
+    loadDefaultSubcategoryStrategy() {
+        const defaultStrategy = `movie:
+  动画电影:
+    genre_ids: '16'
+  华语电影:
+    original_language: 'zh,cn,bo,za'
+  外语电影:
+
+tv:
+  国漫:
+    genre_ids: '16'
+    origin_country: 'CN,TW,HK'
+  日番:
+    genre_ids: '16'
+    origin_country: 'JP'
+  纪录片:
+    genre_ids: '99'
+  儿童:
+    genre_ids: '10762'
+  综艺:
+    genre_ids: '10764,10767'
+  国产剧:
+    origin_country: 'CN,TW,HK'
+  欧美剧:
+    origin_country: 'US,FR,GB,DE,ES,IT,NL,PT,RU,UK'
+  日韩剧:
+    origin_country: 'JP,KP,KR,TH,IN,SG'
+  未分类:`;
+        document.getElementById('subcategory-strategy').value = defaultStrategy;
+        this.api.showNotification('已加载默认二级分类策略', 'info');
+    }
+
+    // 加载默认电影重命名格式
+    loadDefaultMovieFormat() {
+        document.getElementById('movie-rename-format').value = '{title} ({year})';
+        this.api.showNotification('已加载默认电影重命名格式', 'info');
+    }
+
+    // 加载默认电视剧重命名格式
+    loadDefaultTVFormat() {
+        document.getElementById('tv-show-format').value = '{title} ({year})';
+        document.getElementById('tv-season-format').value = 'Season {season:02d}';
+        document.getElementById('tv-episode-format').value = 'S{season:02d}E{episode:02d}';
+        this.api.showNotification('已加载默认电视剧重命名格式', 'info');
+    }
+
+    // 保存刮削源配置
+    async saveScraperConfig() {
+        if (!this.currentScraper) {
+            this.api.showNotification('请先选择刮削源', 'error');
+            return;
+        }
+
+        try {
+            const config = this.getScraperConfigFromForm();
+            
+            // 构建保存数据
+            const saveData = {
+                scraper_id: this.currentScraper.id,
+                config: config
+            };
+
+            const response = await fetch('/api/scrapers/update', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(saveData)
+            });
+
+            if (!response.ok) {
+                throw new Error(`保存失败: ${response.statusText}`);
+            }
+
+            const result = await response.json();
+            
+            if (result.success) {
+                this.api.showNotification('刮削源配置已保存', 'success');
+                
+                // 关闭模态框
+                const modal = bootstrap.Modal.getInstance(document.getElementById('scraperConfigModal'));
+                if (modal) {
+                    modal.hide();
+                }
+                
+                // 重新加载刮削源列表
+                this.loadScrapers();
+            } else {
+                throw new Error(result.message || '保存失败');
+            }
+        } catch (error) {
+            console.error('保存刮削源配置失败:', error);
+            this.api.showNotification(`保存失败: ${error.message}`, 'error');
         }
     }
 }

@@ -17,9 +17,13 @@ from ..core.task_manager import task_manager
 from ..core.watcher import file_processor
 from ..core.proxy_memory import ProxyManager, MemoryManager, ResourceMonitor, ProxyConfig
 from ..services.monitor import websocket_manager, task_monitor, stats_collector
+from ..core.init_default_scrapers import init_default_scrapers
 
 # 初始化数据库
 init_db()
+
+# 初始化默认刮削源配置
+init_default_scrapers()
 
 # 创建FastAPI应用
 app = FastAPI(
@@ -742,10 +746,21 @@ async def get_scraper_configs():
     db = next(get_db())
     try:
         configs = db.query(ScraperConfig).order_by(ScraperConfig.priority.asc()).all()
+        
+        # 刮削源显示名称映射
+        display_name_map = {
+            'tmdb': 'TMDB',
+            'douban': '豆瓣',
+            'bangumi': 'Bangumi',
+            'imdb': 'IMDb',
+            'tvdb': 'TVDB'
+        }
+        
         return [
             {
                 "id": config.id,
                 "name": config.name,
+                "display_name": display_name_map.get(config.name, config.name.title()),
                 "enabled": config.enabled,
                 "api_key": config.api_key,
                 "cookie": config.cookie,
@@ -779,6 +794,31 @@ async def update_scraper_config(config_id: int, config: ScraperConfigUpdate):
         
         db.commit()
         return {"success": True}
+    finally:
+        db.close()
+
+@app.put("/api/scrapers/priority")
+async def update_scrapers_priority(updates: dict):
+    """批量更新刮削源优先级"""
+    db = next(get_db())
+    try:
+        scraper_updates = updates.get("updates", [])
+        
+        for update in scraper_updates:
+            scraper_id = update.get("id")
+            new_priority = update.get("priority")
+            
+            if scraper_id is not None and new_priority is not None:
+                db_config = db.query(ScraperConfig).filter(ScraperConfig.id == scraper_id).first()
+                if db_config:
+                    db_config.priority = new_priority
+                    db_config.updated_at = datetime.datetime.now()
+        
+        db.commit()
+        return {"success": True}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"更新优先级失败: {str(e)}")
     finally:
         db.close()
 

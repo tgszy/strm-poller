@@ -10,13 +10,21 @@
         body {
             background-color: #f8f9fa;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            height: 100vh;
+            overflow: hidden;
         }
         
         .sidebar {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
+            height: 100vh;
             color: white;
             padding: 0;
+            position: fixed;
+            left: 0;
+            top: 0;
+            z-index: 1000;
+            width: 250px;
+            transition: all 0.3s ease;
         }
         
         .sidebar .nav-link {
@@ -24,6 +32,7 @@
             padding: 12px 20px;
             border-radius: 0;
             transition: all 0.3s ease;
+            white-space: nowrap;
         }
         
         .sidebar .nav-link:hover,
@@ -40,8 +49,106 @@
         }
         
         .main-content {
-            padding: 20px;
-            min-height: 100vh;
+            margin-left: 250px;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            padding: 0;
+            transition: all 0.3s ease;
+        }
+        
+        /* 响应式布局 */
+        @media (max-width: 992px) {
+            .sidebar {
+                width: 200px;
+                transform: translateX(-100%);
+            }
+            
+            .sidebar.mobile-open {
+                transform: translateX(0);
+            }
+            
+            .main-content {
+                margin-left: 0;
+                width: 100%;
+            }
+            
+            .main-content.sidebar-open {
+                margin-left: 200px;
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .header-container {
+                padding: 10px 15px;
+            }
+            
+            .content-container {
+                padding: 15px;
+            }
+            
+            .card {
+                margin-bottom: 15px;
+            }
+        }
+        
+        @media (max-width: 576px) {
+            .sidebar {
+                width: 100%;
+            }
+            
+            .main-content.sidebar-open {
+                margin-left: 0;
+                transform: translateX(100%);
+            }
+            
+            .header-container {
+                padding: 8px 10px;
+            }
+            
+            .content-container {
+                padding: 10px;
+            }
+        }
+        
+        .header-container {
+            background: white;
+            border-bottom: 1px solid #e9ecef;
+            padding: 15px 30px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            flex-shrink: 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .mobile-menu-btn {
+            display: none;
+            background: none;
+            border: none;
+            color: #667eea;
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 5px;
+            border-radius: 4px;
+            transition: all 0.3s ease;
+        }
+        
+        .mobile-menu-btn:hover {
+            background-color: rgba(102, 126, 234, 0.1);
+        }
+        
+        @media (max-width: 992px) {
+            .mobile-menu-btn {
+                display: block;
+            }
+        }
+        
+        .content-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+            background-color: #f8f9fa;
         }
         
         .header {
@@ -154,6 +261,24 @@
             margin-bottom: 10px;
             border-left: 4px solid #667eea;
             transition: all 0.3s ease;
+            cursor: move;
+        }
+        
+        .scraper-item.dragging {
+            opacity: 0.5;
+            transform: scale(0.95);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+        }
+        
+        .scraper-item.drag-over {
+            border-left: 4px solid #ff6b6b;
+            background-color: #f8f9ff;
+        }
+        
+        .scrapers-sortable {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
         }
         
         .scraper-item:hover {
@@ -163,6 +288,19 @@
         .scraper-item.disabled {
             opacity: 0.6;
             border-left-color: #ccc;
+        }
+        
+        .scraper-config-status {
+            font-size: 0.75rem;
+            padding: 2px 6px;
+            border-radius: 8px;
+            font-weight: 500;
+        }
+        
+        .scraper-config-details {
+            font-size: 0.8rem;
+            color: #6c757d;
+            line-height: 1.2;
         }
         
         .stats-card {
@@ -194,8 +332,8 @@
     </style>
 </head>
 <body>
-    <div class="container-fluid">
-        <div class="row">
+    <div class="container-fluid px-0">
+        <div class="row mx-0">
             <!-- 侧边栏 -->
             <div class="col-md-3 col-lg-2 px-0">
                 <div class="sidebar">
@@ -214,6 +352,12 @@
                         <a class="nav-link" href="#" data-page="scrapers">
                             <i class="bi bi-search"></i> 刮削源
                         </a>
+                        <a class="nav-link" href="#" data-page="notifications">
+                            <i class="bi bi-bell"></i> 通知设置
+                        </a>
+                        <a class="nav-link" href="#" data-page="rules">
+                            <i class="bi bi-diagram-3"></i> 规则设置
+                        </a>
                         <a class="nav-link" href="#" data-page="settings">
                             <i class="bi bi-gear"></i> 系统设置
                         </a>
@@ -225,12 +369,15 @@
             </div>
             
             <!-- 主内容区 -->
-            <div class="col-md-9 col-lg-10">
+            <div class="col-md-9 col-lg-10 px-0">
                 <div class="main-content">
-                    <!-- 头部 -->
-                    <div class="header d-flex justify-content-between align-items-center">
+                    <!-- 头部区域 -->
+                    <div class="header-container">
+                        <button class="mobile-menu-btn" id="mobileMenuBtn">
+                            <i class="bi bi-list"></i>
+                        </button>
                         <div>
-                            <h2 id="page-title">仪表盘</h2>
+                            <h2 id="page-title" class="mb-1">仪表盘</h2>
                             <p class="text-muted mb-0">飞牛NAS STRM文件自动整理服务</p>
                         </div>
                         <div class="d-flex gap-2">
@@ -243,8 +390,9 @@
                         </div>
                     </div>
                     
-                    <!-- 页面内容 -->
-                    <div id="page-content">
+                    <!-- 内容区域 -->
+                    <div class="content-container">
+                        <div id="page-content">
                         <!-- 仪表盘页面 -->
                         <div id="dashboard-page" class="page-content">
                             <div class="row">
@@ -447,8 +595,308 @@
                                                            value="3600" min="300" max="86400">
                                                     <div class="form-text">单个任务的最大执行时间</div>
                                                 </div>
+
                                                 <button type="submit" class="btn btn-primary">
                                                     <i class="bi bi-save"></i> 保存设置
+                                                </button>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- 通知设置页面 -->
+                        <div id="notifications-page" class="page-content" style="display: none;">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="card">
+                                        <div class="card-header">
+                                            <h5 class="mb-0">
+                                                <i class="bi bi-bell"></i> 通知渠道配置
+                                            </h5>
+                                        </div>
+                                        <div class="card-body">
+                                            <form id="notifications-form">
+                                                <!-- 微信企业机器人 -->
+                                                <div class="mb-4">
+                                                    <h6 class="border-bottom pb-2">
+                                                        <i class="bi bi-wechat"></i> 微信企业机器人
+                                                    </h6>
+                                                    <div class="mb-3">
+                                                        <div class="form-check form-switch">
+                                                            <input class="form-check-input" type="checkbox" id="wechat-enabled">
+                                                            <label class="form-check-label" for="wechat-enabled">
+                                                                启用微信企业机器人通知
+                                                            </label>
+                                                        </div>
+                                                    </div>
+                                                    <div class="mb-3">
+                                                        <label for="wechat-webhook" class="form-label">Webhook地址</label>
+                                                        <input type="text" class="form-control" id="wechat-webhook" 
+                                                               placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx">
+                                                        <div class="form-text">企业微信群机器人的Webhook地址</div>
+                                                    </div>
+                                                    <div class="mb-3">
+                                                        <label for="wechat-mentions" class="form-label">@成员</label>
+                                                        <input type="text" class="form-control" id="wechat-mentions" 
+                                                               placeholder="@all 或 @userid">
+                                                        <div class="form-text">需要@的成员，多个用逗号分隔</div>
+                                                    </div>
+                                                </div>
+                                                
+                                                <!-- Telegram -->
+                                                <div class="mb-4">
+                                                    <h6 class="border-bottom pb-2">
+                                                        <i class="bi bi-telegram"></i> Telegram
+                                                    </h6>
+                                                    <div class="mb-3">
+                                                        <div class="form-check form-switch">
+                                                            <input class="form-check-input" type="checkbox" id="telegram-enabled">
+                                                            <label class="form-check-label" for="telegram-enabled">
+                                                                启用Telegram通知
+                                                            </label>
+                                                        </div>
+                                                    </div>
+                                                    <div class="mb-3">
+                                                        <label for="telegram-bot-token" class="form-label">Bot Token</label>
+                                                        <input type="password" class="form-control" id="telegram-bot-token" 
+                                                               placeholder="1234567890:ABCDEFGHIJKLMNOPQRSTUVWXYZ">
+                                                        <div class="form-text">Telegram Bot的API Token</div>
+                                                    </div>
+                                                    <div class="mb-3">
+                                                        <label for="telegram-chat-id" class="form-label">Chat ID</label>
+                                                        <input type="text" class="form-control" id="telegram-chat-id" 
+                                                               placeholder="-1001234567890">
+                                                        <div class="form-text">接收通知的聊天ID</div>
+                                                    </div>
+                                                </div>
+                                                
+                                                <!-- 事件类型设置 -->
+                                                <div class="mb-4">
+                                                    <h6 class="border-bottom pb-2">
+                                                        <i class="bi bi-check2-square"></i> 事件类型
+                                                    </h6>
+                                                    <div class="mb-3">
+                                                        <div class="form-check">
+                                                            <input class="form-check-input" type="checkbox" id="event-task-start">
+                                                            <label class="form-check-label" for="event-task-start">
+                                                                任务开始
+                                                            </label>
+                                                        </div>
+                                                    </div>
+                                                    <div class="mb-3">
+                                                        <div class="form-check">
+                                                            <input class="form-check-input" type="checkbox" id="event-task-complete">
+                                                            <label class="form-check-label" for="event-task-complete">
+                                                                任务完成
+                                                            </label>
+                                                        </div>
+                                                    </div>
+                                                    <div class="mb-3">
+                                                        <div class="form-check">
+                                                            <input class="form-check-input" type="checkbox" id="event-task-failed">
+                                                            <label class="form-check-label" for="event-task-failed">
+                                                                任务失败
+                                                            </label>
+                                                        </div>
+                                                    </div>
+                                                    <div class="mb-3">
+                                                        <div class="form-check">
+                                                            <input class="form-check-input" type="checkbox" id="event-file-processed">
+                                                            <label class="form-check-label" for="event-file-processed">
+                                                                文件处理完成
+                                                            </label>
+                                                        </div>
+                                                    </div>
+                                                    <div class="mb-3">
+                                                        <div class="form-check">
+                                                            <input class="form-check-input" type="checkbox" id="event-system-error">
+                                                            <label class="form-check-label" for="event-system-error">
+                                                                系统错误
+                                                            </label>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                
+                                                <button type="submit" class="btn btn-primary">
+                                                    <i class="bi bi-save"></i> 保存设置
+                                                </button>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="card">
+                                        <div class="card-header">
+                                            <h5 class="mb-0">
+                                                <i class="bi bi-info-circle"></i> 通知预览
+                                            </h5>
+                                        </div>
+                                        <div class="card-body">
+                                            <div class="alert alert-info">
+                                                <h6>任务开始通知示例：</h6>
+                                                <p class="mb-1"><strong>任务名称：</strong>测试任务</p>
+                                                <p class="mb-1"><strong>源路径：</strong>/mnt/user/aliyun</p>
+                                                <p class="mb-1"><strong>目标路径：</strong>/mnt/user/emby</p>
+                                                <p class="mb-0"><strong>开始时间：</strong>2024-01-01 10:00:00</p>
+                                            </div>
+                                            <div class="alert alert-success">
+                                                <h6>任务完成通知示例：</h6>
+                                                <p class="mb-1"><strong>任务名称：</strong>测试任务</p>
+                                                <p class="mb-1"><strong>处理文件：</strong>15/15</p>
+                                                <p class="mb-1"><strong>耗时：</strong>2分30秒</p>
+                                                <p class="mb-0"><strong>完成时间：</strong>2024-01-01 10:02:30</p>
+                                            </div>
+                                            <div class="alert alert-danger">
+                                                <h6>任务失败通知示例：</h6>
+                                                <p class="mb-1"><strong>任务名称：</strong>测试任务</p>
+                                                <p class="mb-1"><strong>错误信息：</strong>刮削器连接失败</p>
+                                                <p class="mb-1"><strong>失败文件：</strong>3/15</p>
+                                                <p class="mb-0"><strong>失败时间：</strong>2024-01-01 10:01:15</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- 规则设置页面 -->
+                        <div id="rules-page" class="page-content" style="display: none;">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="card">
+                                        <div class="card-header">
+                                            <h5 class="mb-0">
+                                                <i class="bi bi-diagram-3"></i> 二级分类策略
+                                            </h5>
+                                        </div>
+                                        <div class="card-body">
+                                            <form id="subcategory-form">
+                                                <div class="mb-3">
+                                                    <div class="form-check form-switch">
+                                                        <input class="form-check-input" type="checkbox" id="subcategory-enabled">
+                                                        <label class="form-check-label" for="subcategory-enabled">
+                                                            启用二级分类
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label for="subcategory-strategy" class="form-label">分类策略配置</label>
+                                                    <textarea class="form-control" id="subcategory-strategy" 
+                                                              rows="12" placeholder="配置电影和电视剧的二级分类策略"></textarea>
+                                                    <div class="form-text">
+                                                        YAML格式配置，支持电影和电视剧的二级分类策略。示例：<br>
+                                                        <code>
+movie:<br>
+  动画电影:<br>
+    genre_ids: '16'<br>
+  华语电影:<br>
+    original_language: 'zh,cn,bo,za'<br>
+  外语电影:<br>
+tv:<br>
+  国漫:<br>
+    genre_ids: '16'<br>
+    origin_country: 'CN,TW,HK'<br>
+  日番:<br>
+    genre_ids: '16'<br>
+    origin_country: 'JP'<br>
+  未分类:<br>
+                                                        </code>
+                                                    </div>
+                                                </div>
+                                                <div class="mb-3">
+                                                    <button type="button" class="btn btn-outline-primary btn-sm" id="load-default-strategy">
+                                                        <i class="bi bi-download"></i> 加载默认策略
+                                                    </button>
+                                                    <button type="button" class="btn btn-outline-secondary btn-sm" id="reset-strategy">
+                                                        <i class="bi bi-arrow-counterclockwise"></i> 重置
+                                                    </button>
+                                                </div>
+                                                <button type="submit" class="btn btn-primary">
+                                                    <i class="bi bi-save"></i> 保存策略
+                                                </button>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="card">
+                                        <div class="card-header">
+                                            <h5 class="mb-0">
+                                                <i class="bi bi-tv"></i> 重命名格式设置
+                                            </h5>
+                                        </div>
+                                        <div class="card-body">
+                                            <form id="rename-form">
+                                                <!-- 电影重命名格式 -->
+                                                <div class="mb-4">
+                                                    <h6 class="border-bottom pb-2">
+                                                        <i class="bi bi-film"></i> 电影重命名格式
+                                                    </h6>
+                                                    <div class="mb-3">
+                                                        <label for="movie-rename-format" class="form-label">电影命名格式</label>
+                                                        <input type="text" class="form-control" id="movie-rename-format" 
+                                                               value="{title} ({year})" placeholder="{title} ({year})">
+                                                        <div class="form-text">
+                                                            可用变量：{title}, {year}, {original_title}, {imdb_id}, {tmdb_id}<br>
+                                                            示例："{title} ({year})" → "阿凡达 (2009)"
+                                                        </div>
+                                                    </div>
+                                                    <div class="mb-3">
+                                                        <button type="button" class="btn btn-outline-primary btn-sm" id="load-movie-default">
+                                                            <i class="bi bi-download"></i> 加载默认格式
+                                                        </button>
+                                                        <button type="button" class="btn btn-outline-secondary btn-sm" id="reset-movie-format">
+                                                            <i class="bi bi-arrow-counterclockwise"></i> 重置
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                
+                                                <!-- 电视剧重命名格式 -->
+                                                <div class="mb-4">
+                                                    <h6 class="border-bottom pb-2">
+                                                        <i class="bi bi-collection-play"></i> 电视剧重命名格式
+                                                    </h6>
+                                                    <div class="mb-3">
+                                                        <label for="tv-show-format" class="form-label">剧集文件夹格式</label>
+                                                        <input type="text" class="form-control" id="tv-show-format" 
+                                                               value="{title} ({year})" placeholder="{title} ({year})">
+                                                        <div class="form-text">
+                                                            可用变量：{title}, {year}, {original_title}, {imdb_id}, {tmdb_id}<br>
+                                                            示例："{title} ({year})" → "权力的游戏 (2011)"
+                                                        </div>
+                                                    </div>
+                                                    <div class="mb-3">
+                                                        <label for="tv-season-format" class="form-label">季文件夹格式</label>
+                                                        <input type="text" class="form-control" id="tv-season-format" 
+                                                               value="Season {season:02d}" placeholder="Season {season:02d}">
+                                                        <div class="form-text">
+                                                            可用变量：{season}, {season:02d}<br>
+                                                            示例："Season {season:02d}" → "Season 01"
+                                                        </div>
+                                                    </div>
+                                                    <div class="mb-3">
+                                                        <label for="tv-episode-format" class="form-label">集文件格式</label>
+                                                        <input type="text" class="form-control" id="tv-episode-format" 
+                                                               value="S{season:02d}E{episode:02d}" placeholder="S{season:02d}E{episode:02d}">
+                                                        <div class="form-text">
+                                                            可用变量：{season}, {season:02d}, {episode}, {episode:02d}, {title}<br>
+                                                            示例："S{season:02d}E{episode:02d} - {title}" → "S01E01 - 凛冬将至"
+                                                        </div>
+                                                    </div>
+                                                    <div class="mb-3">
+                                                        <button type="button" class="btn btn-outline-primary btn-sm" id="load-tv-default">
+                                                            <i class="bi bi-download"></i> 加载默认格式
+                                                        </button>
+                                                        <button type="button" class="btn btn-outline-secondary btn-sm" id="reset-tv-format">
+                                                            <i class="bi bi-arrow-counterclockwise"></i> 重置
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                
+                                                <button type="submit" class="btn btn-primary">
+                                                    <i class="bi bi-save"></i> 保存格式
                                                 </button>
                                             </form>
                                         </div>
@@ -542,61 +990,195 @@
 
     <!-- 刮削源配置模态框 -->
     <div class="modal fade" id="scraperConfigModal" tabindex="-1">
-        <div class="modal-dialog">
+        <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title">
-                        <i class="bi bi-gear"></i> 刮削源配置
+                        <i class="bi bi-gear"></i> <span id="scraper-config-title">刮削源配置</span>
                     </h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
                     <form id="scraper-config-form">
-                        <div class="mb-3">
-                            <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" id="scraper-enabled">
-                                <label class="form-check-label" for="scraper-enabled">
-                                    启用此刮削源
-                                </label>
-                            </div>
-                        </div>
-                        <div class="mb-3">
-                            <label for="scraper-priority" class="form-label">优先级</label>
-                            <input type="number" class="form-control" id="scraper-priority" 
-                                   min="0" max="100" value="0">
-                            <div class="form-text">数字越小优先级越高</div>
-                        </div>
-                        <div class="mb-3" id="api-key-group">
-                            <label for="scraper-api-key" class="form-label">API Key</label>
-                            <input type="password" class="form-control" id="scraper-api-key" 
-                                   placeholder="输入API密钥">
-                            <div class="form-text" id="api-key-help"></div>
-                        </div>
-                        <div class="mb-3" id="cookie-group" style="display: none;">
-                            <label for="scraper-cookie" class="form-label">Cookie</label>
-                            <textarea class="form-control" id="scraper-cookie" rows="3" 
-                                      placeholder="输入Cookie字符串"></textarea>
-                            <div class="form-text">选填，登录后获取的Cookie</div>
-                        </div>
+                        <!-- 基本信息 -->
                         <div class="row">
                             <div class="col-md-6">
                                 <div class="mb-3">
-                                    <label for="scraper-timeout" class="form-label">超时时间 (秒)</label>
-                                    <input type="number" class="form-control" id="scraper-timeout" 
-                                           min="5" max="300" value="30">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="scraper-enabled">
+                                        <label class="form-check-label" for="scraper-enabled">
+                                            启用此刮削源
+                                        </label>
+                                    </div>
                                 </div>
                             </div>
                             <div class="col-md-6">
                                 <div class="mb-3">
-                                    <label for="scraper-retry" class="form-label">重试次数</label>
-                                    <input type="number" class="form-control" id="scraper-retry" 
-                                           min="0" max="10" value="3">
+                                    <label for="scraper-priority" class="form-label">优先级</label>
+                                    <input type="number" class="form-control" id="scraper-priority" 
+                                           min="0" max="100" value="0">
+                                    <div class="form-text">数字越小优先级越高</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- 认证配置区域 -->
+                        <div class="card mb-3">
+                            <div class="card-header">
+                                <h6 class="mb-0"><i class="bi bi-key"></i> 认证配置</h6>
+                            </div>
+                            <div class="card-body">
+                                <!-- TMDB配置 -->
+                                <div class="scraper-config-section" id="tmdb-config" style="display: none;">
+                                    <div class="mb-3">
+                                        <label for="tmdb-api-key" class="form-label">TMDB API Key</label>
+                                        <input type="password" class="form-control" id="tmdb-api-key" 
+                                               placeholder="输入TMDB API密钥">
+                                        <div class="form-text">
+                                            <button type="button" class="btn btn-sm btn-outline-info" data-help="tmdb">
+                                                <i class="bi bi-question-circle"></i> 如何获取TMDB API Key
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="tmdb-language" class="form-label">语言</label>
+                                        <select class="form-select" id="tmdb-language">
+                                            <option value="zh-CN">中文 (简体)</option>
+                                            <option value="zh-TW">中文 (繁体)</option>
+                                            <option value="en-US">English</option>
+                                            <option value="ja-JP">日本語</option>
+                                            <option value="ko-KR">한국어</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                
+                                <!-- 豆瓣配置 -->
+                                <div class="scraper-config-section" id="douban-config" style="display: none;">
+                                    <div class="mb-3">
+                                        <label for="douban-cookie" class="form-label">豆瓣Cookie</label>
+                                        <textarea class="form-control" id="douban-cookie" rows="3" 
+                                                  placeholder="输入豆瓣登录后的Cookie字符串"></textarea>
+                                        <div class="form-text">
+                                            <button type="button" class="btn btn-sm btn-outline-info" data-help="douban">
+                                                <i class="bi bi-question-circle"></i> 如何获取豆瓣Cookie
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Bangumi配置 -->
+                                <div class="scraper-config-section" id="bangumi-config" style="display: none;">
+                                    <div class="mb-3">
+                                        <label for="bangumi-app-id" class="form-label">App ID</label>
+                                        <input type="text" class="form-control" id="bangumi-app-id" 
+                                               placeholder="输入Bangumi App ID">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="bangumi-app-secret" class="form-label">App Secret</label>
+                                        <input type="password" class="form-control" id="bangumi-app-secret" 
+                                               placeholder="输入Bangumi App Secret">
+                                        <div class="form-text">
+                                            <button type="button" class="btn btn-sm btn-outline-info" data-help="bangumi">
+                                                <i class="bi bi-question-circle"></i> 如何获取Bangumi API
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- IMDb配置 -->
+                                <div class="scraper-config-section" id="imdb-config" style="display: none;">
+                                    <div class="mb-3">
+                                        <label for="imdb-api-key" class="form-label">IMDb API Key</label>
+                                        <input type="password" class="form-control" id="imdb-api-key" 
+                                               placeholder="输入IMDb API密钥">
+                                        <div class="form-text">
+                                            <button type="button" class="btn btn-sm btn-outline-info" data-help="imdb">
+                                                <i class="bi bi-question-circle"></i> 如何获取IMDb API Key
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- TVDB配置 -->
+                                <div class="scraper-config-section" id="tvdb-config" style="display: none;">
+                                    <div class="mb-3">
+                                        <label for="tvdb-api-key" class="form-label">TVDB API Key</label>
+                                        <input type="password" class="form-control" id="tvdb-api-key" 
+                                               placeholder="输入TVDB API密钥">
+                                        <div class="form-text">
+                                            <button type="button" class="btn btn-sm btn-outline-info" data-help="tvdb">
+                                                <i class="bi bi-question-circle"></i> 如何获取TVDB API Key
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- 连接设置 -->
+                        <div class="card mb-3">
+                            <div class="card-header">
+                                <h6 class="mb-0"><i class="bi bi-wifi"></i> 连接设置</h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="scraper-timeout" class="form-label">超时时间 (秒)</label>
+                                            <input type="number" class="form-control" id="scraper-timeout" 
+                                                   min="5" max="300" value="30">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="scraper-retry" class="form-label">重试次数</label>
+                                            <input type="number" class="form-control" id="scraper-retry" 
+                                                   min="0" max="10" value="3">
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="scraper-delay" class="form-label">请求间隔 (毫秒)</label>
+                                    <input type="number" class="form-control" id="scraper-delay" 
+                                           min="0" max="5000" value="1000">
+                                    <div class="form-text">避免请求过于频繁被限制</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- 测试区域 -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h6 class="mb-0"><i class="bi bi-wifi"></i> 连接测试</h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <span id="scraper-test-status" class="badge bg-secondary">未测试</span>
+                                        <small id="scraper-test-latency" class="text-muted ms-2"></small>
+                                    </div>
+                                    <button type="button" class="btn btn-outline-primary" id="test-scraper-btn">
+                                        <i class="bi bi-wifi"></i> 测试连接
+                                    </button>
+                                </div>
+                                <div id="scraper-test-result" class="mt-2" style="display: none;">
+                                    <div class="alert alert-success" role="alert">
+                                        <i class="bi bi-check-circle"></i> 连接测试成功
+                                    </div>
+                                </div>
+                                <div id="scraper-test-error" class="mt-2" style="display: none;">
+                                    <div class="alert alert-danger" role="alert">
+                                        <i class="bi bi-exclamation-triangle"></i> <span id="scraper-error-message">连接测试失败</span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </form>
                 </div>
                 <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-info" id="scraper-help-btn">
+                        <i class="bi bi-question-circle"></i> 帮助
+                    </button>
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
                     <button type="button" class="btn btn-primary" id="save-scraper-config-btn">
                         <i class="bi bi-save"></i> 保存配置
@@ -607,6 +1189,46 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // 响应式布局控制
+        document.addEventListener('DOMContentLoaded', function() {
+            const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+            const sidebar = document.querySelector('.sidebar');
+            const mainContent = document.querySelector('.main-content');
+            
+            // 移动端菜单切换
+            mobileMenuBtn.addEventListener('click', function() {
+                sidebar.classList.toggle('mobile-open');
+                mainContent.classList.toggle('sidebar-open');
+            });
+            
+            // 点击内容区域关闭移动端菜单
+            mainContent.addEventListener('click', function(e) {
+                if (window.innerWidth <= 992 && sidebar.classList.contains('mobile-open')) {
+                    sidebar.classList.remove('mobile-open');
+                    mainContent.classList.remove('sidebar-open');
+                }
+            });
+            
+            // 窗口大小变化时重置菜单状态
+            window.addEventListener('resize', function() {
+                if (window.innerWidth > 992) {
+                    sidebar.classList.remove('mobile-open');
+                    mainContent.classList.remove('sidebar-open');
+                }
+            });
+            
+            // 页面切换时关闭移动端菜单
+            document.querySelectorAll('.nav-link').forEach(link => {
+                link.addEventListener('click', function() {
+                    if (window.innerWidth <= 992) {
+                        sidebar.classList.remove('mobile-open');
+                        mainContent.classList.remove('sidebar-open');
+                    }
+                });
+            });
+        });
+    </script>
     <script src="static/js/app.js"></script>
 </body>
 </html>

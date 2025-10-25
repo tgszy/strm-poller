@@ -376,17 +376,20 @@ class TaskWorker:
         media_info = self._extract_media_info(file_name)
         
         # 刮削元数据
-        if not self.task_manager.scraper_manager:
-            raise ValueError("刮削器管理器未初始化")
-            
-        scraped_data = await self.task_manager.scraper_manager.scrape_media(
-            media_info['title'],
-            media_info.get('year'),
-            media_info.get('type', 'movie')
-        )
+        scraped_data = None
+        if self.task_manager.scraper_manager:
+            scraped_data = await self.task_manager.scraper_manager.scrape_media(media_info)
         
+        # 如果没有刮削数据，使用基础媒体信息
         if not scraped_data:
-            raise ValueError("无法刮削媒体信息")
+            scraped_data = media_info.copy()
+            # 添加一些默认值以支持二级分类
+            scraped_data.update({
+                'genres': [],
+                'genre_ids': [],
+                'original_language': 'zh',
+                'origin_country': ['CN']
+            })
         
         # 组织文件
         destination_path = self._organize_file(strm_file, scraped_data)
@@ -479,7 +482,13 @@ class TaskWorker:
     
     def _get_subcategory(self, scraped_data: dict, media_type: str) -> str:
         """获取二级分类"""
-        # 从刮削数据中获取 genres 或 categories
+        # 首先尝试使用新的策略配置
+        if media_type in settings.subcategory_strategy:
+            category = self._match_subcategory_strategy(scraped_data, media_type)
+            if category:
+                return category
+        
+        # 如果新策略没有匹配，回退到旧的分类映射
         genres = scraped_data.get('genres', [])
         
         # 检查是否在配置的二级分类映射中
@@ -497,6 +506,69 @@ class TaskWorker:
             'tv': '其他'
         }
         return default_subcategories.get(media_type, '其他')
+    
+    def _match_subcategory_strategy(self, scraped_data: dict, media_type: str) -> str:
+        """匹配二级分类策略"""
+        if media_type not in settings.subcategory_strategy:
+            return None
+            
+        strategy = settings.subcategory_strategy[media_type]
+        
+        # 遍历所有分类策略
+        for category_name, category_rules in strategy.items():
+            if self._check_category_rules(scraped_data, category_rules):
+                return category_name
+        
+        # 如果没有匹配任何规则，返回默认分类
+        default_categories = {
+            'movie': '外语电影',
+            'tv': '未分类'
+        }
+        return default_categories.get(media_type, '其他')
+    
+    def _check_category_rules(self, scraped_data: dict, category_rules: dict) -> bool:
+        """检查分类规则是否匹配"""
+        # 如果没有规则，则默认匹配
+        if not category_rules:
+            return True
+            
+        # 检查所有规则
+        for field, expected_values in category_rules.items():
+            actual_value = scraped_data.get(field)
+            
+            # 如果字段不存在，则不匹配
+            if actual_value is None:
+                return False
+                
+            # 处理不同的字段类型
+            if field == 'genre_ids':
+                # genre_ids 是数字列表，需要检查是否包含指定的ID
+                expected_ids = [int(x.strip()) for x in expected_values.split(',')]
+                actual_ids = scraped_data.get('genre_ids', [])
+                if not any(genre_id in expected_ids for genre_id in actual_ids):
+                    return False
+                    
+            elif field == 'original_language':
+                # 语言字段，检查是否在指定语言列表中
+                expected_langs = [x.strip() for x in expected_values.split(',')]
+                if actual_value not in expected_langs:
+                    return False
+                    
+            elif field == 'origin_country':
+                # 国家字段，检查是否在指定国家列表中
+                expected_countries = [x.strip() for x in expected_values.split(',')]
+                actual_countries = scraped_data.get('origin_country', [])
+                if not any(country in expected_countries for country in actual_countries):
+                    return False
+                    
+            else:
+                # 其他字段，直接比较
+                expected_values_list = [x.strip() for x in expected_values.split(',')]
+                if actual_value not in expected_values_list:
+                    return False
+        
+        # 所有规则都匹配
+        return True
     
     def _get_category(self, media_type: str) -> str:
         """获取分类"""

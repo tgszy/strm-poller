@@ -1,5 +1,9 @@
 # 使用Python 3.11 Alpine作为基础镜像
-FROM python:3.11-alpine
+    FROM python:3.11-alpine
+    
+    # 设置pip镜像源为国内源
+    RUN pip config set global.index-url https://mirrors.163.com/pypi/simple/
+    RUN pip config set global.trusted-host mirrors.163.com
 
 # 设置工作目录
 WORKDIR /app

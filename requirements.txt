@@ -14,12 +14,11 @@ python-dotenv==1.0.0
 requests==2.31.0
 lxml==4.9.3
 beautifulsoup4==4.12.2
-Pillow==10.1.0
+Pillow>=11.0.0
 asyncio-mqtt==0.16.1
 psutil==5.9.6
 resource==0.2.1
 click==8.1.7
 colorama==0.4.6
 tqdm==4.66.1
-psycopg2-binary==2.9.9
 httpx==0.25.2

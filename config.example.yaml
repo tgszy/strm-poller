@@ -135,15 +135,6 @@ notification:
 
 # 数据库配置
 database:
-  # 是否使用 PostgreSQL（默认为 SQLite）
-  postgres_enabled: false
-  # PostgreSQL 配置（仅在 postgres_enabled 为 true 时生效）
-  postgres:
-    host: "localhost"
-    port: 5432
-    user: "strm-poller"
-    password: "password"
-    dbname: "strm-poller"
   # SQLite 配置
   sqlite_path: "/config/strm-poller.db"
 

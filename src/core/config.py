@@ -81,6 +81,47 @@ class Settings(BaseSettings):
             "Reality": "真人秀"
         }
     }
+    # 二级分类策略配置
+    subcategory_strategy: Dict[str, Dict[str, Dict[str, str]]] = {
+        "movie": {
+            "动画电影": {
+                "genre_ids": "16"
+            },
+            "华语电影": {
+                "original_language": "zh,cn,bo,za"
+            },
+            "外语电影": {}
+        },
+        "tv": {
+            "国漫": {
+                "genre_ids": "16",
+                "origin_country": "CN,TW,HK"
+            },
+            "日番": {
+                "genre_ids": "16",
+                "origin_country": "JP"
+            },
+            "纪录片": {
+                "genre_ids": "99"
+            },
+            "儿童": {
+                "genre_ids": "10762"
+            },
+            "综艺": {
+                "genre_ids": "10764,10767"
+            },
+            "国产剧": {
+                "origin_country": "CN,TW,HK"
+            },
+            "欧美剧": {
+                "origin_country": "US,FR,GB,DE,ES,IT,NL,PT,RU,UK"
+            },
+            "日韩剧": {
+                "origin_country": "JP,KP,KR,TH,IN,SG"
+            },
+            "未分类": {}
+        }
+    }
     
     # 通知配置
     # 微信企业机器人配置
@@ -98,21 +139,10 @@ class Settings(BaseSettings):
     # SQLite配置 - 默认值，将在__init__中根据config_path更新
     sqlite_path: str = "/config/strm-poller.db"
     
-    # PostgreSQL配置
-    postgres_enabled: bool = False
-    postgres_host: str = "localhost"
-    postgres_port: int = 5432
-    postgres_user: str = "strm-poller"
-    postgres_password: str = "password"
-    postgres_dbname: str = "strm-poller"
-    
     @property
     def database_url(self) -> str:
         """获取数据库URL"""
-        if self.postgres_enabled:
-            return f"postgresql://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_dbname}"
-        else:
-            return f"sqlite:///{self.sqlite_path}"
+        return f"sqlite:///{self.sqlite_path}"
     
     # 日志配置
     log_level: str = os.environ.get("LOG_LEVEL", "INFO")
