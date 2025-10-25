@@ -181,7 +181,7 @@ if not static_dir_found:
         <p>环境: {{"Docker容器" if os.environ.get('DOCKER_ENV', 'false').lower() == 'true' or os.path.exists('/.dockerenv') else '本地环境'}}</p>
         <p>尝试的静态目录:</p>
         <ul>
-            {"\n            ".join([f"<li>{d['path']} - {d['exists'] and '存在' or '不存在'}</li>" for d in static_dirs_info])}
+            {"\n            ".join(["<li>{path} - {status}</li>".format(path=d['path'], status='存在' if d['exists'] else '不存在') for d in static_dirs_info])}
         </ul>
     </div>
     
