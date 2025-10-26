@@ -19,128 +19,107 @@
 - 🔔 **多渠道通知**: 支持微信企业机器人、Telegram通知，可自定义通知事件范围
 - 🔧 **灵活配置**: 支持环境变量和配置文件双重配置
 
-## 🚀 快速开始
+## 🚀 一键安装运行
+
+### Windows 用户
+1. 确保已安装 [Docker Desktop](https://www.docker.com/products/docker-desktop)
+2. 双击运行 `install_windows.bat`
+3. 等待安装完成，自动打开浏览器访问 http://localhost:35455
+
+### Linux/macOS 用户
+1. 确保已安装 Docker
+2. 运行命令：`chmod +x install_linux.sh && ./install_linux.sh`
+3. 等待安装完成，访问 http://localhost:35455
+
+### Docker Compose 方式
+```bash
+# 下载 docker-compose.yml 文件后运行
+docker-compose up -d
+```
+
+访问地址: http://localhost:35455
+
+## 📋 传统安装方式
 
 ### Docker运行（推荐）
 
-**Linux/macOS 环境**:
+**基础命令（适用于所有平台）**:
 
 ```bash
 docker run -d \
   --name=strm-poller \
   -p 35455:35455 \
-  # 配置目录：包含数据库、配置文件和日志
-  -v /mnt/user/appdata/strm-poller:/config \
-  # 源目录：包含.strm文件的目录，建议设置为只读
-  -v /mnt/user/aliyun:/src:ro \
-  # 目标目录：整理后的媒体文件将存放在这里
-  -v /mnt/user/emby:/dst \
-  # 基本环境变量配置
-  -e PUID=1000 -e PGID=1000 -e TZ=Asia/Shanghai \
-  # 内存限制
-  -e MAX_MEMORY=1024 \
-  # 代理设置（如需使用）
-  -e PROXY_ENABLED=true \
-  -e PROXY_TYPE=http \
-  -e PROXY_HOST=192.168.1.100 \
-  -e PROXY_PORT=7890 \
-  # 容器内存限制（双重保障）
-  --memory=1g --memory-swap=1g \
+  -v ./config:/config \
+  -v ./src:/src:ro \
+  -v ./dst:/dst \
   --restart=unless-stopped \
   ghcr.io/tgszy/strm-poller:latest
 ```
 
-**Windows PowerShell 环境**:
+**Windows PowerShell**:
 
 ```powershell
 docker run -d `
   --name=strm-poller `
   -p 35455:35455 `
-  -v ${pwd}\appdata\strm-poller:/config `
-  -v D:\path\to\aliyun:/src:ro `
-  -v D:\path\to\emby:/dst `
-  -e PUID=1000 -e PGID=1000 -e TZ=Asia/Shanghai `
-  -e MAX_MEMORY=1024 `
-  -e PROXY_ENABLED=true `
-  -e PROXY_TYPE=http `
-  -e PROXY_HOST=192.168.1.100 `
-  -e PROXY_PORT=7890 `
-  --memory=1g --memory-swap=1g `
+  -v "./config:/config" `
+  -v "./src:/src:ro" `
+  -v "./dst:/dst" `
   --restart=unless-stopped `
   ghcr.io/tgszy/strm-poller:latest
 ```
 
-### Docker Compose 方式
+**NAS/服务器环境（推荐）**:
 
-使用项目根目录的 docker-compose.yml 文件，或者创建以下内容的文件：
-
-```yaml
-version: '3.8'
-
-services:
-  strm-poller:
-    image: ghcr.io/tgszy/strm-poller:latest
-    container_name: strm-poller
-    restart: unless-stopped
-    ports:
-      - "35455:35455"
-    volumes:
-        # 配置目录：包含数据库、配置文件和日志
-        # Windows路径示例: - C:\path\to\config:/config
-        - ./config:/config
-        # 源目录：包含.strm文件的目录，建议设置为只读
-        # Windows路径示例: - C:\path\to\src:/src:ro
-        - ./src:/src:ro
-        # 目标目录：整理后的媒体文件将存放在这里
-        # Windows路径示例: - C:\path\to\dst:/dst
-        - ./dst:/dst
-      # 可自定义添加更多源目录和目标目录映射
-      # 例如：
-      # - ./other_source:/src2:ro
-      # - ./other_destination:/dst2
-    environment:
-      # 用户权限设置
-      - PUID=1000
-      - PGID=1000
-      # 时区设置
-      - TZ=Asia/Shanghai
-      # 内存限制 (MB)
-      - MAX_MEMORY=1024
-      # 代理设置
-      - PROXY_ENABLED=false
-      - PROXY_URL=
-      # 日志级别
-      - LOG_LEVEL=INFO
-    # 容器内存限制
-    mem_limit: 1g
-    memswap_limit: 1g
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:35455/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+```bash
+docker run -d \
+  --name=strm-poller \
+  -p 35455:35455 \
+  -v /mnt/user/appdata/strm-poller:/config \
+  -v /mnt/user/aliyun:/src:ro \
+  -v /mnt/user/emby:/dst \
+  -e PUID=1000 \
+  -e PGID=1000 \
+  -e TZ=Asia/Shanghai \
+  --restart=unless-stopped \
+  ghcr.io/tgszy/strm-poller:latest
 ```
 
-然后运行：
+> 💡 **提示**: 更多Docker run命令示例请参考 [docker-run-examples.md](docker-run-examples.md)
+
+### Docker Compose 方式
+
+**基础使用（推荐）**:
+
 ```bash
+# 使用项目根目录的 docker-compose.yml
 docker-compose up -d
 ```
 
-### 桥接模式（简化配置）
-
-如果您只需要本地访问，可以使用简化的桥接模式配置：
+**仅本地访问（提高安全性）**:
 
 ```bash
-# 使用桥接模式（仅支持本地访问）
+# 使用桥接模式配置，仅支持本地访问
 docker-compose -f docker-compose-bridge.yml up -d
 ```
 
-**桥接模式特点：**
-- 仅绑定到本地回环地址（127.0.0.1:35455）
-- 简化网络配置，避免复杂的网络设置
-- 仅支持本地访问，提高安全性
-- 访问地址：`http://localhost:35455`
+**Docker Compose 配置文件说明**:
+
+项目提供了两种配置模式：
+
+1. **标准模式** (`docker-compose.yml`):
+   - 映射到所有网络接口
+   - 支持远程访问
+   - 适用于大多数场景
+
+2. **桥接模式** (`docker-compose-bridge.yml`):
+   - 仅绑定到本地回环地址 (127.0.0.1:35455)
+   - 仅支持本地访问，提高安全性
+   - 简化网络配置
+
+**访问地址**:
+- 标准模式: `http://localhost:35455` (本地) 或 `http://服务器IP:35455` (远程)
+- 桥接模式: `http://localhost:35455` (仅本地)
 
 ## 路径映射详解
 
@@ -204,6 +183,30 @@ http://localhost:35455
 ```
 
 如果在远程服务器或NAS上运行，可以使用对应设备的IP地址代替 `localhost`。
+
+## 🎯 一键安装脚本说明
+
+### install_windows.bat
+- 自动检测Docker环境
+- 创建默认目录结构（用户文档目录下）
+- 自动拉取最新镜像并启动容器
+- 自动检查服务状态
+- 提供完整的安装反馈
+
+### install_linux.sh
+- 自动检测Docker环境
+- 创建默认目录结构（用户主目录下）
+- 自动设置正确的用户权限
+- 自动拉取最新镜像并启动容器
+- 提供完整的安装反馈
+
+### 默认目录结构
+安装脚本会自动创建以下目录：
+- **配置目录**: 存放配置文件、数据库和日志
+- **源文件目录**: 存放待整理的 .strm 文件
+- **目标目录**: 存放整理后的媒体文件
+
+安装完成后，您可以直接访问 http://localhost:35455 开始使用。
 
 ## 检查运行状态
 
