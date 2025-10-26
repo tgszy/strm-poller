@@ -254,6 +254,7 @@ logging:
     def __init__(self, **kwargs):
         try:
             super().__init__(**kwargs)
+            
             # 确保路径使用正确的分隔符，支持Windows和Linux环境下的路径处理
             self.config_path = os.path.normpath(self.config_path)
             self.src_path = os.path.normpath(self.src_path)
@@ -273,8 +274,10 @@ logging:
                 logger.info(f"日志文件路径: {self.log_file}")
             except Exception as e:
                 logger.error(f"创建日志目录失败: {str(e)}")
-                # 回退到临时目录
-                self.log_file = "/tmp/strm-poller.log"
+                # 回退到临时目录，支持Windows和Linux
+                import tempfile
+                temp_dir = tempfile.gettempdir()
+                self.log_file = os.path.join(temp_dir, "strm-poller.log")
                 logger.warning(f"回退到临时日志文件: {self.log_file}")
             
             # 检查配置目录权限

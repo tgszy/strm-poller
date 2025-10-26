@@ -1,8 +1,9 @@
 # 使用Python 3.11 Alpine作为基础镜像
 FROM python:3.11-alpine
 
-# 设置pip镜像源为官方源（避免国内镜像源不稳定问题）
-# RUN pip config set global.index-url https://pypi.org/simple/
+# 设置系统包管理器和pip镜像源为国内镜像源
+RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories && \
+    pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple/
 
 # 设置工作目录
 WORKDIR /app
@@ -47,10 +48,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 复制应用代码
 COPY src/ ./src/
 
-# 确保静态文件目录存在并复制所有静态文件
-RUN mkdir -p /app/src/static/js
+# 复制静态文件
 COPY src/static/ ./src/static/
-COPY src/static/js/ ./src/static/js/
 
 # 创建必要的目录
 RUN mkdir -p /app/data /app/logs /config && \

@@ -3,18 +3,21 @@
 
 # 服务器配置
 server:
-  host: "0.0.0.0"
+  host: 0.0.0.0
   port: 35455  # 与代码和Docker配置保持一致
   debug: false
 
 # 路径配置
 paths:
-  # 配置目录（容器内默认为 /config）
-  config_path: "/config"
-  # 源目录（包含 .strm 文件，容器内默认为 /src）
-  src_path: "/src"
-  # 目标目录（整理后的媒体文件，容器内默认为 /dst）
-  dst_path: "/dst"
+  # 源目录列表，用于扫描.strm文件
+  sources:
+    - path: /src
+      recursive: true
+      watch: true
+  # 目标目录列表，用于存放整理后的媒体文件
+  destinations:
+    - path: /dst
+      name: "默认目标"
 
 # 代理配置
 proxy:
@@ -26,59 +29,48 @@ proxy:
   password: ""  # 可选
   test_url: "https://api.themoviedb.org/3/configuration"
 
-# 刮削源配置
-scrapers:
-  # 刮削源优先级顺序
-  order: ["tmdb", "douban", "bangumi", "imdb", "tvdb"]
-  
-  # TMDB 配置
+# 刮削配置
+scraper:
+  # 刮削源优先级排序（从上到下）
+  sources:
+    - tmdb
+    - douban
+    - bangumi
+    - imdb
+    - tvdb
+  # TMDB配置
   tmdb:
-    api_key: ""  # 必填，请从 TMDB 网站获取
+    api_key: ""
     language: "zh-CN"
-    timeout: 30
-    retry_count: 3
-  
+    region: "CN"
   # 豆瓣配置
   douban:
-    cookie: ""  # 必填，格式：dbcl2=xxx; ck=xxx
-    timeout: 30
-    retry_count: 3
-  
-  # Bangumi 配置
+    api_key: ""
+    user_agent: ""
+  # Bangumi配置
   bangumi:
-    api_key: ""  # 必填，请从 Bangumi 网站获取
-    timeout: 30
-    retry_count: 3
-  
-  # IMDb 配置
-  imdb:
-    cookie: ""  # 可选
-    timeout: 30
-    retry_count: 3
-  
-  # TVDB 配置
-  tvdb:
-    api_key: ""  # 必填，请从 TVDB 网站获取
-    timeout: 30
-    retry_count: 3
+    api_key: ""
+  # 重试配置
+  retry:
+    max_attempts: 3
+    retry_interval_hours: 2
+    max_retry_hours: 24
 
-# 系统配置
-system:
-  # 内存限制（MB）
-  max_memory_mb: 1024
-  # 最大工作线程数
-  max_workers: 4
-  # 任务超时时间（秒）
-  task_timeout: 3600
-  # 失败重试次数
-  retry_count: 3
-  # 重试延迟时间（秒）
-  retry_delay: 3600
-  
-  # 用户配置
-  puid: 1000
-  pgid: 1000
-  timezone: "Asia/Shanghai"
+# 任务配置
+task:
+  # 最大并发任务数
+  max_concurrent: 3
+  # 任务队列大小
+  queue_size: 100
+  # 任务超时时间（分钟）
+  timeout: 60
+
+# 监控配置
+monitor:
+  # 内存监控告警阈值（MB）
+  memory_alert_threshold: 900
+  # 健康检查间隔（秒）
+  health_check_interval: 30
 
 # 文件监控配置
 watcher:
@@ -87,60 +79,113 @@ watcher:
   # 是否递归监控子目录
   recursive: true
 
-# 文件整理配置
+# 整理配置
 organize:
-  # 整理策略：category（按类别）, type（按类型）, none（不整理）
-  strategy: "category"
-  # 重命名模板
-  rename_template: "{title} ({year}){extension}"
   # 是否启用二级分类
   enable_subcategory: true
-  # 二级分类映射
-  subcategory_map:
+  # 默认整理策略: categorize(分类), type(类型), none(不整理)
+  strategy: categorize
+  
+  # 二级分类策略配置
+  subcategory_strategy:
+    # 配置电影的分类策略
     movie:
-      Action: "动作"
-      Comedy: "喜剧"
-      Drama: "剧情"
-      Horror: "恐怖"
-      Sci-Fi: "科幻"
-      Fantasy: "奇幻"
-      Romance: "爱情"
+      # 分类名同时也是目录名
+      动画电影:
+        # 匹配 genre_ids 内容类型，16是动漫
+        genre_ids: '16'
+      华语电影:
+        # 匹配语种
+        original_language: 'zh,cn,bo,za'
+      # 未匹配以上条件时，分类为外语电影
+      外语电影:
+    
+    # 配置电视剧的分类策略
     tv:
-      Series: "剧集"
-      Anime: "动画"
-      Documentary: "纪录片"
-      Reality: "真人秀"
+      # 分类名同时也是目录名
+      国漫:
+        # 匹配 genre_ids 内容类型，16是动漫
+        genre_ids: '16'
+        # 匹配 origin_country 国家，CN是中国大陆，TW是中国台湾，HK是中国香港
+        origin_country: 'CN,TW,HK'
+      日番:
+        # 匹配 genre_ids 内容类型，16是动漫
+        genre_ids: '16'
+        # 匹配 origin_country 国家，JP是日本
+        origin_country: 'JP'
+      纪录片:
+        # 匹配 genre_ids 内容类型，99是纪录片
+        genre_ids: '99'
+      儿童:
+        # 匹配 genre_ids 内容类型，10762是儿童
+        genre_ids: '10762'
+      综艺:
+        # 匹配 genre_ids 内容类型，10764 10767都是综艺
+        genre_ids: '10764,10767'
+      国产剧:
+        # 匹配 origin_country 国家，CN是中国大陆，TW是中国台湾，HK是中国香港
+        origin_country: 'CN,TW,HK'
+      欧美剧:
+        # 匹配 origin_country 国家，主要欧美国家列表
+        origin_country: 'US,FR,GB,DE,ES,IT,NL,PT,RU,UK'
+      日韩剧:
+        # 匹配 origin_country 国家，主要亚洲国家列表
+        origin_country: 'JP,KP,KR,TH,IN,SG'
+      # 未匹配以上分类，则命名为未分类
+      未分类:
+  
+  # 电影分类
+  movie:
+    # 电影整理策略，优先级高于全局策略
+    strategy: categorize
+    # 自定义命名格式
+    naming_format: "{title} ({year})"
+    # 二级分类目录名格式
+    subcategory_format: "{year}-{category}"
+  # 电视剧分类
+  series:
+    # 电视剧整理策略
+    strategy: categorize
+    # 电视剧命名格式
+    naming_format: "{title} ({year})"
+    # 季命名格式
+    season_format: "Season {season_number:02d}"
+    # 集命名格式
+    episode_format: "S{season_number:02d}E{episode_number:02d}"
+    # 二级分类目录名格式
+    subcategory_format: "{year}-{category}"
 
 # 通知配置
 notification:
-  # 微信企业机器人配置
+  # 微信企业机器人通知
   wechat:
-    # 是否启用
     enabled: false
-    # 企业机器人webhook地址
-    webhook_url: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx"
-    # 通知事件范围，可选值：all, task_started, task_completed, task_failed, file_processed, file_failed, system_started, system_error
-    events: ["task_started", "task_completed", "task_failed"]
-  
-  # Telegram配置
+    webhook_url: ""
+    events:
+      - task_started
+      - task_completed
+      - task_failed
+  # Telegram通知
   telegram:
-    # 是否启用
     enabled: false
-    # Telegram机器人token
-    bot_token: "xxx:xxx"
-    # 聊天ID
-    chat_id: "xxx"
-    # 通知事件范围，可选值：all, task_started, task_completed, task_failed, file_processed, file_failed, system_started, system_error
-    events: ["task_started", "task_completed", "task_failed"]
+    bot_token: ""
+    chat_id: ""
+    events:
+      - task_started
+      - task_completed
+      - task_failed
+
+# 日志配置
+log:
+  level: INFO
+  format: json
+  file_rotation: true
+  max_file_size: 10
+  max_backup_count: 5
 
 # 数据库配置
 database:
-  # SQLite 配置
-  sqlite_path: "/config/strm-poller.db"
-
-# 日志配置
-logging:
-  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
-  file: "/config/logs/strm-poller.log"
-  max_size: 10485760  # 10MB
-  backup_count: 5
+  type: sqlite
+  path: /config/data.db
+  pool_size: 5
+  timeout: 30
