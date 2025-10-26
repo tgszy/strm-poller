@@ -62,6 +62,7 @@ class TaskResponse(BaseModel):
 class ScraperConfigUpdate(BaseModel):
     name: str
     enabled: bool
+    api_url: Optional[str] = None
     api_key: Optional[str] = None
     cookie: Optional[str] = None
     priority: int = 0
@@ -658,6 +659,7 @@ async def get_scraper_configs():
                 "name": config.name,
                 "display_name": display_name_map.get(config.name, config.name.title()),
                 "enabled": config.enabled,
+                "api_url": config.api_url,
                 "api_key": config.api_key,
                 "cookie": config.cookie,
                 "priority": config.priority,
@@ -681,6 +683,7 @@ async def update_scraper_config(config_id: int, config: ScraperConfigUpdate):
             raise HTTPException(status_code=404, detail="配置不存在")
         
         db_config.enabled = config.enabled
+        db_config.api_url = config.api_url
         db_config.api_key = config.api_key
         db_config.cookie = config.cookie
         db_config.priority = config.priority

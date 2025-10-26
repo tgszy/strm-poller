@@ -22,6 +22,7 @@ def init_default_scrapers():
                 'enabled': True,
                 'api_key': '',  # 用户需要自行配置
                 'cookie': None,
+                'api_url': 'https://api.tmdb.org',  # 默认API地址
                 'priority': 0,
                 'timeout': 30,
                 'retry_count': 3
@@ -31,6 +32,7 @@ def init_default_scrapers():
                 'enabled': True,
                 'api_key': None,
                 'cookie': '',  # 用户需要自行配置
+                'api_url': 'https://api.douban.com',  # 默认API地址
                 'priority': 1,
                 'timeout': 30,
                 'retry_count': 3
@@ -40,6 +42,7 @@ def init_default_scrapers():
                 'enabled': True,
                 'api_key': None,
                 'cookie': '',  # 用户需要自行配置
+                'api_url': 'https://api.bgm.tv',  # 默认API地址
                 'priority': 2,
                 'timeout': 30,
                 'retry_count': 3
@@ -49,6 +52,7 @@ def init_default_scrapers():
                 'enabled': True,
                 'api_key': None,
                 'cookie': '',  # 用户需要自行配置
+                'api_url': 'https://imdb-api.com',  # 默认API地址
                 'priority': 3,
                 'timeout': 30,
                 'retry_count': 3
@@ -58,6 +62,7 @@ def init_default_scrapers():
                 'enabled': True,
                 'api_key': '',  # 用户需要自行配置
                 'cookie': None,
+                'api_url': 'https://api.thetvdb.com',  # 默认API地址
                 'priority': 4,
                 'timeout': 30,
                 'retry_count': 3

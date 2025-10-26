@@ -54,6 +54,7 @@ class ScraperConfig(Base):
     enabled = Column(Boolean, default=True)
     api_key = Column(String(255), nullable=True)
     cookie = Column(Text, nullable=True)
+    api_url = Column(String(255), nullable=True)  # API地址
     priority = Column(Integer, default=0)
     timeout = Column(Integer, default=30)
     retry_count = Column(Integer, default=3)

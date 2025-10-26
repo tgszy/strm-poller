@@ -801,18 +801,38 @@ class PageManager {
 
         container.innerHTML = `
             <div class="mb-3">
-                <p class="text-muted">拖拽调整刮削源优先级，点击配置按钮编辑详细设置</p>
-                <div class="scrapers-sortable" id="scrapers-sortable">
+                <p class="text-muted">点击卡片打开刮削源配置界面，拖拽调整优先级</p>
+                <div class="row" id="scrapers-sortable">
                     ${sortedScrapers.map(scraper => this.renderScraperItem(scraper)).join('')}
                 </div>
             </div>
         `;
 
-        // 绑定刮削源操作事件
+        // 绑定刮削源操作事件和卡片点击事件
         sortedScrapers.forEach(scraper => {
             const item = container.querySelector(`[data-scraper="${scraper.name}"]`);
             if (item) {
                 this.bindScraperActions(item, scraper);
+                
+                // 添加点击卡片打开配置的功能
+                item.addEventListener('click', (e) => {
+                    // 防止按钮点击事件冒泡
+                    if (!e.target.closest('[data-action]')) {
+                        this.showScraperConfigModal(scraper);
+                    }
+                });
+                
+                // 添加悬停效果
+                item.style.cursor = 'pointer';
+                item.addEventListener('mouseenter', () => {
+                    item.style.transform = 'translateY(-2px)';
+                    item.style.boxShadow = '0 4px 8px rgba(0,0,0,0.1)';
+                    item.style.transition = 'all 0.2s ease';
+                });
+                item.addEventListener('mouseleave', () => {
+                    item.style.transform = 'translateY(0)';
+                    item.style.boxShadow = 'none';
+                });
             }
         });
 
@@ -937,27 +957,31 @@ class PageManager {
         const configStatus = this.getScraperConfigStatus(scraper);
         
         return `
-            <div class="scraper-item ${!scraper.enabled ? 'disabled' : ''}" 
-                 data-scraper-id="${scraper.id}" data-scraper="${scraper.name}" data-priority="${scraper.priority}">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div class="flex-grow-1">
-                        <h6 class="mb-1">
-                            <i class="bi ${this.getScraperIcon(scraper.name)}"></i>
-                            ${displayName}
-                        </h6>
-                        <div class="d-flex align-items-center gap-2">
-                            <small class="text-muted">优先级: ${scraper.priority}</small>
-                            <span class="badge ${configStatus.badgeClass}">${configStatus.text}</span>
+            <div class="col-md-6 col-lg-4 mb-3">
+                <div class="card scraper-card ${!scraper.enabled ? 'disabled' : ''}" 
+                     data-scraper-id="${scraper.id}" data-scraper="${scraper.name}" data-priority="${scraper.priority}">
+                    <div class="card-body">
+                        <div class="d-flex align-items-center mb-2">
+                            <i class="bi ${this.getScraperIcon(scraper.name)} fs-4 me-2"></i>
+                            <h5 class="card-title mb-0">${displayName}</h5>
                         </div>
-                        ${configStatus.details ? `<small class="text-muted d-block mt-1">${configStatus.details}</small>` : ''}
-                    </div>
-                    <div class="btn-group btn-group-sm">
-                        <button class="btn btn-outline-primary" data-action="config">
-                            <i class="bi bi-gear"></i>
-                        </button>
-                        <button class="btn btn-outline-success" data-action="test">
-                            <i class="bi bi-wifi"></i>
-                        </button>
+                        
+                        <div class="mb-3">
+                            <span class="badge ${configStatus.badgeClass} mb-1">${configStatus.text}</span>
+                            <div class="text-muted small">
+                                <i class="bi bi-sort-numeric-down"></i> 优先级: ${scraper.priority}
+                            </div>
+                            ${configStatus.details ? `<div class="text-muted small">${configStatus.details}</div>` : ''}
+                        </div>
+                        
+                        <div class="d-flex justify-content-between">
+                            <button class="btn btn-outline-primary btn-sm" data-action="config">
+                                <i class="bi bi-gear"></i> 配置
+                            </button>
+                            <button class="btn btn-outline-success btn-sm" data-action="test">
+                                <i class="bi bi-wifi"></i> 测试
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1104,20 +1128,25 @@ class PageManager {
             // 填充特定配置
             switch(scraperType) {
                 case 'tmdb':
+                    document.getElementById('tmdb-api-url').value = scraper.api_url || 'https://api.tmdb.org';
                     document.getElementById('tmdb-api-key').value = scraper.api_key || '';
                     document.getElementById('tmdb-language').value = scraper.language || 'zh-CN';
                     break;
                 case 'douban':
+                    document.getElementById('douban-api-url').value = scraper.api_url || 'https://api.douban.com';
                     document.getElementById('douban-cookie').value = scraper.cookie || '';
                     break;
                 case 'bangumi':
+                    document.getElementById('bangumi-api-url').value = scraper.api_url || 'https://api.bgm.tv';
                     document.getElementById('bangumi-app-id').value = scraper.app_id || '';
                     document.getElementById('bangumi-app-secret').value = scraper.app_secret || '';
                     break;
                 case 'imdb':
+                    document.getElementById('imdb-api-url').value = scraper.api_url || 'https://imdb-api.com';
                     document.getElementById('imdb-api-key').value = scraper.api_key || '';
                     break;
                 case 'tvdb':
+                    document.getElementById('tvdb-api-url').value = scraper.api_url || 'https://api.thetvdb.com';
                     document.getElementById('tvdb-api-key').value = scraper.api_key || '';
                     break;
             }
@@ -1220,20 +1249,25 @@ class PageManager {
         
         switch(scraperType) {
             case 'tmdb':
+                config.api_url = document.getElementById('tmdb-api-url').value;
                 config.api_key = document.getElementById('tmdb-api-key').value;
                 config.language = document.getElementById('tmdb-language').value;
                 break;
             case 'douban':
+                config.api_url = document.getElementById('douban-api-url').value;
                 config.cookie = document.getElementById('douban-cookie').value;
                 break;
             case 'bangumi':
+                config.api_url = document.getElementById('bangumi-api-url').value;
                 config.app_id = document.getElementById('bangumi-app-id').value;
                 config.app_secret = document.getElementById('bangumi-app-secret').value;
                 break;
             case 'imdb':
+                config.api_url = document.getElementById('imdb-api-url').value;
                 config.api_key = document.getElementById('imdb-api-key').value;
                 break;
             case 'tvdb':
+                config.api_url = document.getElementById('tvdb-api-url').value;
                 config.api_key = document.getElementById('tvdb-api-key').value;
                 break;
         }
