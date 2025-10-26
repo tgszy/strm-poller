@@ -39,6 +39,11 @@ services:
       # - PROXY_URL=http://proxy.example.com:8080
       # - PROXY_TYPE=http
       
+      # 局域网代理IP配置（如需通过局域网代理访问外部服务）
+      # - LAN_PROXY_ENABLED=false
+      # - LAN_PROXY_IP=192.168.1.100  # 替换为实际的局域网代理服务器IP
+      # - LAN_PROXY_PORT=8080         # 替换为实际的代理端口
+      
       # 通知配置（可选）
       # - NOTIFY_WECHAT_ENABLED=false
       # - NOTIFY_TELEGRAM_ENABLED=false
