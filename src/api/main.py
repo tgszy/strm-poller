@@ -926,6 +926,37 @@ async def update_proxy_config(config: ProxyConfigModel):
             timeout=config.timeout
         )
         logger.info("未配置代理环境变量，使用API配置")
+        
+        # 检查数据库中是否有代理URL配置
+        db = next(get_db())
+        try:
+            proxy_url_config = db.query(SystemConfig).filter(SystemConfig.key == "proxy_url").first()
+            proxy_enabled_config = db.query(SystemConfig).filter(SystemConfig.key == "proxy_enabled").first()
+            
+            if proxy_url_config and proxy_url_config.value:
+                import re
+                proxy_url = proxy_url_config.value
+                
+                # 匹配代理URL格式：protocol://host:port 或 protocol://user:pass@host:port
+                pattern = r'(?:https?|socks5)://(?:([^:@]+):([^:@]+)@)?([^:/]+):(\d+)'
+                match = re.match(pattern, proxy_url)
+                
+                if match:
+                    username, password, host, port = match.groups()
+                    # 从URL中提取协议类型
+                    protocol_match = re.match(r'(https?|socks5)', proxy_url)
+                    protocol = protocol_match.group(1) if protocol_match else 'http'
+                    
+                    # 更新代理配置
+                    proxy_config.enabled = proxy_enabled_config.value.lower() == "true" if proxy_enabled_config else config.enabled
+                    proxy_config.type = protocol
+                    proxy_config.host = host
+                    proxy_config.port = int(port)
+                    proxy_config.username = username
+                    proxy_config.password = password
+                    logger.info(f"从数据库加载代理配置: {proxy_url}")
+        finally:
+            db.close()
     
     # 重新初始化代理管理器
     if proxy_manager:

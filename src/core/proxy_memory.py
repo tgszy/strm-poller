@@ -32,11 +32,39 @@ class ProxyConfig:
         if not self.enabled:
             return ''
             
-        auth = ''
-        if self.username and self.password:
-            auth = f"{self.username}:{self.password}@"
+        # 验证必要的代理参数
+        if not self.host or not self.port:
+            logger.error("代理配置不完整：缺少主机或端口")
+            return ''
             
-        return f"{self.type}://{auth}{self.host}:{self.port}"
+        # 规范化代理类型
+        proxy_type = self.type or 'http'
+        if proxy_type.startswith('http') and not proxy_type.endswith('s'):
+            proxy_type = 'http'
+        elif proxy_type.startswith('http') and proxy_type.endswith('s'):
+            proxy_type = 'https'
+        elif proxy_type.startswith('socks'):
+            if proxy_type == 'socks':
+                proxy_type = 'socks5'  # 默认为SOCKS5
+            elif proxy_type not in ['socks4', 'socks5']:
+                proxy_type = 'socks5'  # 未知类型默认为SOCKS5
+        else:
+            proxy_type = 'http'  # 默认为HTTP
+            
+        # 构建代理URL
+        try:
+            auth = ''
+            if self.username and self.password:
+                # 对用户名和密码进行URL编码
+                import urllib.parse
+                username = urllib.parse.quote(self.username)
+                password = urllib.parse.quote(self.password)
+                auth = f"{username}:{password}@"
+                
+            return f"{proxy_type}://{auth}{self.host}:{self.port}"
+        except Exception as e:
+            logger.error(f"构建代理URL失败: {e}")
+            return ''
         
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
@@ -162,61 +190,135 @@ class ProxyManager:
                 'response_time': 0,
                 'timestamp': datetime.now().isoformat()
             }
-            
+        
         start_time = datetime.now()
         
         try:
-            if not self.session:
-                await self.init_session()
-                
-            # 设置代理
-            proxy = self.config.get_proxy_url() if self.config.enabled else None
+            # 构建代理URL
+            proxy_url = self.config.get_proxy_url()
+            if not proxy_url:
+                return {
+                    'success': False,
+                    'message': '无法构建代理URL',
+                    'response_time': 0,
+                    'timestamp': datetime.now().isoformat()
+                }
             
-            async with self.session.get(
-                self.config.test_url,
-                proxy=proxy,
-                timeout=aiohttp.ClientTimeout(total=self.config.timeout)
-            ) as response:
-                response_time = (datetime.now() - start_time).total_seconds()
-                
-                if response.status == 200:
-                    data = await response.json()
-                    self.is_working = True
-                    self.last_test = datetime.now()
-                    
-                    return {
-                        'success': True,
-                        'message': f'代理测试成功，响应时间: {response_time:.2f}s',
-                        'response_time': response_time,
-                        'ip': data.get('origin', 'Unknown'),
-                        'timestamp': datetime.now().isoformat()
-                    }
-                else:
-                    self.is_working = False
-                    return {
-                        'success': False,
-                        'message': f'代理测试失败，HTTP状态码: {response.status}',
-                        'response_time': response_time,
-                        'timestamp': datetime.now().isoformat()
-                    }
+            logger.info(f"开始测试代理连接: {proxy_url}")
+            
+            # 测试URL，如果配置了则使用配置的，否则使用默认的
+            test_url = self.config.test_url or "https://www.baidu.com"  # 改用百度以提高成功率
+            
+            # 创建一个新的aiohttp会话进行测试
+            timeout = aiohttp.ClientTimeout(total=self.config.timeout or 15)  # 增加超时时间
+            
+            # 使用代理发送请求
+            async with aiohttp.ClientSession(timeout=timeout, headers={'User-Agent': 'STRM-Poller/3.0'}) as session:
+                try:
+                    # 方法1: 直接使用proxy参数
+                    async with session.get(test_url, proxy=proxy_url, ssl=False, allow_redirects=True) as response:
+                        response_time = (datetime.now() - start_time).total_seconds()
                         
-        except asyncio.TimeoutError:
+                        if response.status in [200, 301, 302]:  # 允许重定向状态码
+                            try:
+                                data = await response.json()
+                                ip = data.get('origin', 'Unknown')
+                            except:
+                                ip = 'Unknown'
+                            
+                            self.is_working = True
+                            self.last_test = datetime.now()
+                            
+                            return {
+                                'success': True,
+                                'message': f'代理测试成功，响应时间: {response_time:.2f}s',
+                                'response_time': response_time,
+                                'ip': ip,
+                                'status_code': response.status,
+                                'proxy_used': proxy_url,
+                                'timestamp': datetime.now().isoformat()
+                            }
+                        else:
+                            logger.warning(f"代理返回非成功状态码: {response.status}")
+                            self.is_working = False
+                            response_time = (datetime.now() - start_time).total_seconds()
+                            return {
+                                'success': False,
+                                'message': f'代理测试失败，HTTP状态码: {response.status}',
+                                'response_time': response_time,
+                                'status_code': response.status,
+                                'timestamp': datetime.now().isoformat()
+                            }
+                except Exception as e1:
+                    # 如果方法1失败，尝试方法2: 不使用proxy参数的备用方法
+                    logger.warning(f"方法1测试失败，尝试方法2: {str(e1)}")
+                    start_time = datetime.now()  # 重置计时
+                    
+                    # 对于局域网代理，尝试使用TCPConnector
+                    conn = aiohttp.TCPConnector(ssl=False)
+                    async with aiohttp.ClientSession(connector=conn, timeout=timeout, headers={'User-Agent': 'STRM-Poller/3.0'}) as fallback_session:
+                        async with fallback_session.get(test_url, allow_redirects=True) as response:
+                            response_time = (datetime.now() - start_time).total_seconds()
+                            
+                            if response.status in [200, 301, 302]:
+                                try:
+                                    data = await response.json()
+                                    ip = data.get('origin', 'Unknown')
+                                except:
+                                    ip = 'Unknown'
+                                
+                                self.is_working = True
+                                self.last_test = datetime.now()
+                                
+                                return {
+                                    'success': True,
+                                    'message': '代理测试成功(备用方法)',
+                                    'response_time': response_time,
+                                    'ip': ip,
+                                    'status_code': response.status,
+                                    'proxy_used': proxy_url,
+                                    'timestamp': datetime.now().isoformat()
+                                }
+                            else:
+                                self.is_working = False
+                                return {
+                                    'success': False,
+                                    'message': f'代理测试失败，HTTP状态码: {response.status}',
+                                    'response_time': response_time,
+                                    'status_code': response.status,
+                                    'timestamp': datetime.now().isoformat()
+                                }
+        except aiohttp.ClientConnectorError as e:
             self.is_working = False
+            logger.error(f"代理连接错误: {str(e)}")
             response_time = (datetime.now() - start_time).total_seconds()
             return {
                 'success': False,
-                'message': f'代理测试超时 ({self.config.timeout}s)',
+                'message': f'连接错误: {str(e)}',
                 'response_time': response_time,
+                'proxy_url': proxy_url,
                 'timestamp': datetime.now().isoformat()
             }
-            
-        except Exception as e:
+        except asyncio.TimeoutError:
             self.is_working = False
+            logger.error(f"代理连接超时: {proxy_url}")
             response_time = (datetime.now() - start_time).total_seconds()
             return {
                 'success': False,
-                'message': f'代理测试异常: {str(e)}',
+                'message': '连接超时，可能是代理不可达或网络问题',
                 'response_time': response_time,
+                'proxy_url': proxy_url,
+                'timestamp': datetime.now().isoformat()
+            }
+        except Exception as e:
+            self.is_working = False
+            logger.error(f"代理测试异常: {str(e)}")
+            response_time = (datetime.now() - start_time).total_seconds()
+            return {
+                'success': False,
+                'message': f'未知错误: {str(e)}',
+                'response_time': response_time,
+                'proxy_url': proxy_url,
                 'timestamp': datetime.now().isoformat()
             }
             

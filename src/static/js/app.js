@@ -2235,13 +2235,22 @@ tv:
     }
 
     async saveProxySettings() {
+        let proxyUrl = document.getElementById('proxy-url').value.trim();
+        
+        // 如果URL没有协议前缀，自动添加http://
+        if (proxyUrl && !proxyUrl.match(/^https?:\/\//) && !proxyUrl.match(/^socks5?:\/\//)) {
+            proxyUrl = 'http://' + proxyUrl;
+        }
+        
         const settings = {
             proxy_enabled: document.getElementById('proxy-enabled').checked,
-            proxy_url: document.getElementById('proxy-url').value
+            proxy_url: proxyUrl
         };
 
         try {
             await this.api.updateSettings(settings);
+            // 保存成功后，更新输入框显示
+            document.getElementById('proxy-url').value = proxyUrl;
             this.api.showNotification('代理设置已保存', 'success');
         } catch (error) {
             console.error('保存代理设置失败:', error);
