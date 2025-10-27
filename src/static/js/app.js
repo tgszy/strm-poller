@@ -16,23 +16,29 @@ class APIClient {
             // 创建日志模态框
             const logModal = document.createElement('div');
             logModal.className = 'modal fade';
-            logModal.id = 'task-logs-modal';
+            logModal.id = `task-logs-modal-${taskId}`;
             logModal.tabIndex = -1;
             logModal.innerHTML = `
-                <div class="modal-dialog modal-lg">
+                <div class="modal-dialog modal-xl">
                     <div class="modal-content">
                         <div class="modal-header">
                             <h5 class="modal-title">
                                 <i class="bi bi-file-text"></i> 任务日志 - ID: ${taskId}
                             </h5>
-                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            <div class="d-flex gap-2">
+                                <button type="button" class="btn btn-sm btn-outline-info" id="auto-scroll-${taskId}" data-active="true">
+                                    <i class="bi bi-arrow-down-circle"></i> 自动滚动
+                                </button>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
                         </div>
                         <div class="modal-body">
-                            <div class="log-terminal" id="task-logs-content" style="height: 500px; overflow-y: auto; background-color: #f8f9fa; padding: 15px; font-family: monospace; white-space: pre-wrap;">
+                            <div class="log-terminal" id="task-logs-content-${taskId}" style="height: 500px; overflow-y: auto; background-color: #f8f9fa; padding: 15px; font-family: monospace; white-space: pre-wrap;">
                                 <div class="text-muted text-center py-4">加载日志中...</div>
                             </div>
                         </div>
                         <div class="modal-footer">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="clear-logs-${taskId}">清空日志</button>
                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
                         </div>
                     </div>
@@ -45,31 +51,57 @@ class APIClient {
             const modalInstance = new bootstrap.Modal(logModal);
             modalInstance.show();
             
-            // 加载日志
-            const logsContent = document.getElementById('task-logs-content');
+            // 获取DOM元素
+            const logsContent = document.getElementById(`task-logs-content-${taskId}`);
+            const autoScrollBtn = document.getElementById(`auto-scroll-${taskId}`);
+            const clearLogsBtn = document.getElementById(`clear-logs-${taskId}`);
             
-            // 暂时使用模拟日志数据
-            // 实际应用中应该从API获取真实的任务日志
-            const mockLogs = [
-                `[${new Date().toLocaleString()}] 开始处理任务 ${taskId}`,
-                `[${new Date().toLocaleString()}] 扫描源路径: /mnt/user/strm-files`,
-                `[${new Date().toLocaleString()}] 发现 15 个 STRM 文件`,
-                `[${new Date().toLocaleString()}] 开始刮削文件: movie1.strm`,
-                `[${new Date().toLocaleString()}] 成功识别为电影: 星际穿越 (2014)`,
-                `[${new Date().toLocaleString()}] 生成元数据: movie1.nfo`,
-                `[${new Date().toLocaleString()}] 刮削完成: movie1.strm`,
-                `[${new Date().toLocaleString()}] 开始刮削文件: tvshow1.strm`,
-                `[${new Date().toLocaleString()}] 成功识别为电视剧: 绝命毒师 S01E01`,
-                `[${new Date().toLocaleString()}] 生成元数据: tvshow1.nfo`,
-                `[${new Date().toLocaleString()}] 刮削完成: tvshow1.strm`,
-                `[${new Date().toLocaleString()}] 任务处理完成，成功: 10, 失败: 0, 跳过: 5`
-            ];
+            // 设置自动滚动状态
+            let autoScroll = true;
             
-            logsContent.innerHTML = mockLogs.join('\n');
-            logsContent.scrollTop = logsContent.scrollHeight;
+            // 自动滚动按钮事件
+            autoScrollBtn.addEventListener('click', () => {
+                autoScroll = !autoScroll;
+                autoScrollBtn.dataset.active = autoScroll;
+                autoScrollBtn.classList.toggle('btn-info', autoScroll);
+                autoScrollBtn.classList.toggle('btn-outline-info', !autoScroll);
+                
+                // 如果启用自动滚动，立即滚动到底部
+                if (autoScroll) {
+                    logsContent.scrollTop = logsContent.scrollHeight;
+                }
+            });
+            
+            // 清空日志按钮事件
+            clearLogsBtn.addEventListener('click', () => {
+                logsContent.innerHTML = '';
+            });
+            
+            // 通过WebSocket获取日志更新
+            this.subscribeToTaskLogs(taskId, (logEntry) => {
+                this.addLogEntry(logsContent, logEntry, autoScroll);
+            });
+            
+            // 先获取历史日志
+            this.api.getTaskLogs(taskId)
+                .then(logs => {
+                    logsContent.innerHTML = '';
+                    logs.forEach(log => {
+                        this.addLogEntry(logsContent, log, false);
+                    });
+                    
+                    if (autoScroll) {
+                        logsContent.scrollTop = logsContent.scrollHeight;
+                    }
+                })
+                .catch(error => {
+                    console.error('获取任务日志失败:', error);
+                    this.addLogEntry(logsContent, `[${new Date().toLocaleString()}] 错误: 获取日志失败 - ${error.message}`, autoScroll);
+                });
             
             // 模态框关闭时清理
             logModal.addEventListener('hidden.bs.modal', () => {
+                this.unsubscribeFromTaskLogs(taskId);
                 setTimeout(() => {
                     logModal.remove();
                 }, 100);
@@ -78,6 +110,363 @@ class APIClient {
         } catch (error) {
             console.error('加载任务日志失败:', error);
             this.api.showNotification('加载日志失败: ' + error.message, 'error');
+        }
+    }
+    
+    // 添加日志条目
+    addLogEntry(container, logEntry, autoScroll) {
+        // 根据日志级别添加不同样式
+        let logClass = '';
+        if (logEntry.includes('ERROR') || logEntry.includes('错误')) {
+            logClass = 'text-danger';
+        } else if (logEntry.includes('WARNING') || logEntry.includes('警告')) {
+            logClass = 'text-warning';
+        } else if (logEntry.includes('INFO') || logEntry.includes('信息')) {
+            logClass = 'text-info';
+        }
+        
+        const logLine = document.createElement('div');
+        logLine.className = logClass;
+        logLine.textContent = logEntry;
+        container.appendChild(logLine);
+        
+        // 自动滚动到底部
+        if (autoScroll) {
+            container.scrollTop = container.scrollHeight;
+        }
+    }
+    
+    // 订阅任务日志更新
+    subscribeToTaskLogs(taskId, callback) {
+        if (!this.logSubscriptions) {
+            this.logSubscriptions = {};
+        }
+        
+        this.logSubscriptions[taskId] = callback;
+        
+        // 确保WebSocket连接已建立
+        if (this.api.ws && this.api.ws.readyState === WebSocket.OPEN) {
+            // 发送订阅任务日志的消息
+            this.api.ws.send(JSON.stringify({
+                type: 'subscribe_task_logs',
+                task_id: taskId
+            }));
+        }
+    }
+    
+    // 取消订阅任务日志更新
+    unsubscribeFromTaskLogs(taskId) {
+        if (this.logSubscriptions && this.logSubscriptions[taskId]) {
+            delete this.logSubscriptions[taskId];
+            
+            // 发送取消订阅的消息
+            if (this.api.ws && this.api.ws.readyState === WebSocket.OPEN) {
+                this.api.ws.send(JSON.stringify({
+                    type: 'unsubscribe_task_logs',
+                    task_id: taskId
+                }));
+            }
+        }
+    }
+    
+    // 显示失败文件列表
+    async showFailedFiles(taskId) {
+        try {
+            // 创建失败文件模态框
+            const failedFilesModal = document.createElement('div');
+            failedFilesModal.className = 'modal fade';
+            failedFilesModal.id = 'failed-files-modal';
+            failedFilesModal.tabIndex = -1;
+            failedFilesModal.innerHTML = `
+                <div class="modal-dialog modal-xl">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">
+                                <i class="bi bi-x-circle"></i> 失败文件列表 - 任务ID: ${taskId}
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="mb-3">
+                                <button id="retry-all-btn" class="btn btn-primary btn-sm" disabled>
+                                    <i class="bi bi-arrow-repeat"></i> 重试所有失败文件
+                                </button>
+                                <span class="text-muted ms-3" id="files-count">0 个失败文件</span>
+                            </div>
+                            <div class="failed-files-content" id="failed-files-content" style="max-height: 500px; overflow-y: auto;">
+                                <div class="text-muted text-center py-4">加载失败文件中...</div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                            <button id="retry-selected-btn" class="btn btn-primary" disabled>
+                                <i class="bi bi-arrow-repeat"></i> 重试选中文件
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(failedFilesModal);
+            
+            // 显示模态框
+            const modalInstance = new bootstrap.Modal(failedFilesModal);
+            modalInstance.show();
+            
+            // 获取DOM元素
+            const contentElement = document.getElementById('failed-files-content');
+            const retryAllBtn = document.getElementById('retry-all-btn');
+            const retrySelectedBtn = document.getElementById('retry-selected-btn');
+            const filesCountElement = document.getElementById('files-count');
+            
+            try {
+                const response = await this.api.getFailedFiles(taskId);
+                const files = response.files || [];
+                
+                // 更新文件计数
+                filesCountElement.textContent = `${files.length} 个失败文件`;
+                
+                if (files.length === 0) {
+                    contentElement.innerHTML = '<div class="text-muted text-center py-4">暂无失败文件</div>';
+                    return;
+                }
+                
+                // 启用按钮
+                retryAllBtn.disabled = false;
+                retrySelectedBtn.disabled = false;
+                
+                // 生成文件列表HTML
+                contentElement.innerHTML = `
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th style="width: 50px;">
+                                    <input type="checkbox" id="select-all-files">
+                                </th>
+                                <th>文件名</th>
+                                <th style="max-width: 300px;">错误信息</th>
+                                <th>修改文件名</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${files.map(file => `
+                                <tr data-file-id="${file.id}">
+                                    <td>
+                                        <input type="checkbox" class="file-checkbox" data-file-id="${file.id}">
+                                    </td>
+                                    <td>${file.file_name}</td>
+                                    <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis;" title="${file.error_message || '未知错误'}">
+                                        <div class="text-danger">${file.error_message || '未知错误'}</div>
+                                    </td>
+                                    <td>
+                                        <div class="input-group input-group-sm">
+                                            <input type="text" class="form-control filename-input" value="${file.file_name.replace('.strm', '')}" placeholder="请输入新文件名">
+                                            <div class="input-group-append">
+                                                <span class="input-group-text">.strm</span>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div class="btn-group btn-group-sm">
+                                            <button class="btn btn-sm btn-primary retry-btn" data-file-id="${file.id}">
+                                                <i class="bi bi-arrow-repeat"></i> 重试
+                                            </button>
+                                            <button class="btn btn-sm btn-danger remove-btn" data-file-id="${file.id}">
+                                                <i class="bi bi-trash"></i> 删除
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+                
+                // 全选/取消全选功能
+                const selectAllCheckbox = document.getElementById('select-all-files');
+                const fileCheckboxes = contentElement.querySelectorAll('.file-checkbox');
+                
+                selectAllCheckbox.addEventListener('change', () => {
+                    fileCheckboxes.forEach(checkbox => {
+                        checkbox.checked = selectAllCheckbox.checked;
+                    });
+                });
+                
+                // 单个文件复选框变化时更新全选状态
+                fileCheckboxes.forEach(checkbox => {
+                    checkbox.addEventListener('change', () => {
+                        const allChecked = Array.from(fileCheckboxes).every(cb => cb.checked);
+                        const anyChecked = Array.from(fileCheckboxes).some(cb => cb.checked);
+                        selectAllCheckbox.checked = allChecked;
+                        retrySelectedBtn.disabled = !anyChecked;
+                    });
+                });
+                
+                // 绑定删除按钮事件
+                const removeButtons = contentElement.querySelectorAll('.remove-btn');
+                removeButtons.forEach(button => {
+                    button.addEventListener('click', () => {
+                        const fileId = button.getAttribute('data-file-id');
+                        const row = contentElement.querySelector(`tr[data-file-id="${fileId}"]`);
+                        
+                        if (confirm('确定要从失败列表中删除这个文件吗？')) {
+                            row.remove();
+                            
+                            // 更新文件计数
+                            const remainingRows = contentElement.querySelectorAll('tbody tr');
+                            filesCountElement.textContent = `${remainingRows.length} 个失败文件`;
+                            
+                            if (remainingRows.length === 0) {
+                                contentElement.innerHTML = '<div class="text-success text-center py-4">所有失败文件已处理</div>';
+                                retryAllBtn.disabled = true;
+                                retrySelectedBtn.disabled = true;
+                            }
+                        }
+                    });
+                });
+                
+                // 绑定单个文件重试按钮事件
+                const retryButtons = contentElement.querySelectorAll('.retry-btn');
+                retryButtons.forEach(button => {
+                    button.addEventListener('click', async () => {
+                        await this.retryFile(taskId, button, contentElement, filesCountElement, retryAllBtn, retrySelectedBtn);
+                    });
+                });
+                
+                // 批量重试选中的文件
+                retrySelectedBtn.addEventListener('click', async () => {
+                    const selectedCheckboxes = contentElement.querySelectorAll('.file-checkbox:checked');
+                    if (selectedCheckboxes.length === 0) {
+                        this.api.showNotification('请至少选择一个文件进行重试', 'warning');
+                        return;
+                    }
+                    
+                    retrySelectedBtn.disabled = true;
+                    retrySelectedBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> 重试中...';
+                    
+                    let successCount = 0;
+                    const totalCount = selectedCheckboxes.length;
+                    
+                    for (const checkbox of selectedCheckboxes) {
+                        const fileId = checkbox.getAttribute('data-file-id');
+                        const row = contentElement.querySelector(`tr[data-file-id="${fileId}"]`);
+                        const retryBtn = row.querySelector('.retry-btn');
+                        
+                        try {
+                            await this.retryFile(taskId, retryBtn, contentElement, filesCountElement, retryAllBtn, retrySelectedBtn, false);
+                            successCount++;
+                        } catch (error) {
+                            console.error(`文件 ${fileId} 重试失败:`, error);
+                        }
+                    }
+                    
+                    this.api.showNotification(`批量重试完成: ${successCount}/${totalCount} 个文件重试成功`, successCount === totalCount ? 'success' : 'warning');
+                    
+                    // 更新按钮状态
+                    retrySelectedBtn.disabled = false;
+                    retrySelectedBtn.innerHTML = '<i class="bi bi-arrow-repeat"></i> 重试选中文件';
+                });
+                
+                // 重试所有失败文件
+                retryAllBtn.addEventListener('click', async () => {
+                    if (!confirm('确定要重试所有失败的文件吗？')) return;
+                    
+                    retryAllBtn.disabled = true;
+                    retryAllBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> 重试中...';
+                    
+                    try {
+                        const result = await this.api.retryTask(taskId);
+                        if (result.success) {
+                            this.api.showNotification(`成功重试 ${result.retry_count} 个文件`, 'success');
+                            // 重新加载文件列表
+                            await this.showFailedFiles(taskId);
+                            modalInstance.hide();
+                        } else {
+                            this.api.showNotification(`批量重试失败: ${result.message || '未知错误'}`, 'error');
+                        }
+                    } catch (error) {
+                        this.api.showNotification(`批量重试失败: ${error.message}`, 'error');
+                    } finally {
+                        retryAllBtn.disabled = false;
+                        retryAllBtn.innerHTML = '<i class="bi bi-arrow-repeat"></i> 重试所有失败文件';
+                    }
+                });
+                
+            } catch (error) {
+                contentElement.innerHTML = `<div class="text-danger text-center py-4">加载失败: ${error.message}</div>`;
+            }
+            
+            // 模态框关闭时清理
+            failedFilesModal.addEventListener('hidden.bs.modal', () => {
+                setTimeout(() => {
+                    failedFilesModal.remove();
+                }, 100);
+            });
+            
+        } catch (error) {
+            console.error('显示失败文件列表失败:', error);
+            this.api.showNotification('显示失败文件失败: ' + error.message, 'error');
+        }
+    }
+    
+    // 重试单个文件的辅助方法
+    async retryFile(taskId, button, contentElement, filesCountElement, retryAllBtn, retrySelectedBtn, showNotification = true) {
+        const fileId = button.getAttribute('data-file-id');
+        const row = contentElement.querySelector(`tr[data-file-id="${fileId}"]`);
+        const input = row.querySelector('.filename-input');
+        let newFileName = input.value.trim();
+        
+        if (!newFileName) {
+            if (showNotification) this.api.showNotification('文件名不能为空', 'error');
+            input.classList.add('is-invalid');
+            return;
+        }
+        
+        // 移除文件扩展名（如果用户添加了）
+        newFileName = newFileName.replace(/\.strm$/i, '');
+        input.value = newFileName; // 更新输入框显示
+        input.classList.remove('is-invalid');
+        
+        // 显示加载状态
+        button.disabled = true;
+        button.innerHTML = '<i class="bi bi-hourglass-split"></i> 重试中...';
+        
+        try {
+            const result = await this.api.retrySingleFile(taskId, fileId, newFileName);
+            if (result.success) {
+                if (showNotification) this.api.showNotification('文件重试成功', 'success');
+                
+                // 添加成功动画效果
+                row.classList.add('bg-success-subtle');
+                setTimeout(() => {
+                    // 从列表中移除成功的文件
+                    row.remove();
+                    
+                    // 更新文件计数
+                    const remainingRows = contentElement.querySelectorAll('tbody tr');
+                    filesCountElement.textContent = `${remainingRows.length} 个失败文件`;
+                    
+                    // 更新按钮状态
+                    if (remainingRows.length === 0) {
+                        contentElement.innerHTML = '<div class="text-success text-center py-4">所有失败文件已处理</div>';
+                        retryAllBtn.disabled = true;
+                        retrySelectedBtn.disabled = true;
+                    }
+                }, 300);
+                
+                return true;
+            } else {
+                if (showNotification) this.api.showNotification(`重试失败: ${result.message || '未知错误'}`, 'error');
+                return false;
+            }
+        } catch (error) {
+            if (showNotification) this.api.showNotification(`重试失败: ${error.message}`, 'error');
+            return false;
+        } finally {
+            // 恢复按钮状态
+            button.disabled = false;
+            button.innerHTML = '<i class="bi bi-arrow-repeat"></i> 重试';
         }
     }
 
@@ -246,6 +635,10 @@ class APIClient {
     async getTasks() {
         return this.request('/tasks');
     }
+    
+    async getTaskLogs(taskId) {
+        return this.request(`/tasks/${taskId}/logs`);
+    }
 
     async createTask(taskData) {
         return this.request('/tasks', {
@@ -256,6 +649,17 @@ class APIClient {
 
     async startTask(taskId) {
         return this.request(`/tasks/${taskId}/start`, { method: 'POST' });
+    }
+    
+    async getFailedFiles(taskId) {
+        return this.request(`/tasks/${taskId}/files?status=failed`);
+    }
+    
+    async retrySingleFile(taskId, fileId, newFileName) {
+        return this.request(`/tasks/${taskId}/files/${fileId}/retry`, {
+            method: 'POST',
+            body: JSON.stringify({ new_file_name: newFileName })
+        });
     }
 
     async pauseTask(taskId) {
@@ -338,7 +742,7 @@ class APIClient {
     }
 
     async testProxy(proxyUrl) {
-        return this.request('/proxy/test', {
+        return this.request('/api/proxy/test', {
             method: 'POST',
             body: JSON.stringify({ proxy_url: proxyUrl })
         });
@@ -592,7 +996,77 @@ class PageManager {
             document.getElementById('tv-show-format').value = '';
             document.getElementById('tv-season-format').value = '';
             document.getElementById('tv-episode-format').value = '';
+            // 重置预览
+            updatePreviewDisplay();
         });
+
+        // 模板选择事件监听器
+        document.getElementById('movie-template-select').addEventListener('change', function() {
+            if (this.value && this.value !== '自定义') {
+                document.getElementById('movie-rename-format').value = this.value;
+                updateMoviePreview();
+            }
+        });
+
+        document.getElementById('tv-show-template-select').addEventListener('change', function() {
+            if (this.value && this.value !== '自定义') {
+                document.getElementById('tv-show-format').value = this.value;
+                updateTVShowPreview();
+            }
+        });
+
+        document.getElementById('tv-episode-template-select').addEventListener('change', function() {
+            if (this.value && this.value !== '自定义') {
+                document.getElementById('tv-episode-format').value = this.value;
+                updateTVEpisodePreview();
+            }
+        });
+
+        // 输入框变化时更新预览
+        document.getElementById('movie-rename-format').addEventListener('input', updateMoviePreview);
+        document.getElementById('tv-show-format').addEventListener('input', updateTVShowPreview);
+        document.getElementById('tv-episode-format').addEventListener('input', updateTVEpisodePreview);
+
+        // 预览更新函数
+        function updatePreviewDisplay() {
+            updateMoviePreview();
+            updateTVShowPreview();
+            updateTVEpisodePreview();
+        }
+
+        function updateMoviePreview() {
+            const format = document.getElementById('movie-rename-format').value;
+            let preview = format;
+            // 替换示例变量
+            preview = preview.replace(/{title}/g, '阿凡达')
+                           .replace(/{year}/g, '2009')
+                           .replace(/{original_title}/g, 'Avatar')
+                           .replace(/{tmdb_id}/g, '19995')
+                           .replace(/{imdb_id}/g, 'tt0499549');
+            document.getElementById('movie-format-example').textContent = preview;
+        }
+
+        function updateTVShowPreview() {
+            const format = document.getElementById('tv-show-format').value;
+            let preview = format;
+            // 替换示例变量
+            preview = preview.replace(/{title}/g, '权力的游戏')
+                           .replace(/{year}/g, '2011')
+                           .replace(/{original_title}/g, 'Game of Thrones');
+            document.getElementById('tv-show-format-example').textContent = preview;
+        }
+
+        function updateTVEpisodePreview() {
+            const format = document.getElementById('tv-episode-format').value;
+            let preview = format;
+            // 替换示例变量
+            preview = preview.replace(/{season}/g, '1')
+                           .replace(/{season:02d}/g, '01')
+                           .replace(/{episode}/g, '1')
+                           .replace(/{episode:02d}/g, '01')
+                           .replace(/{title}/g, '凛冬将至');
+            document.getElementById('tv-episode-format-example').textContent = preview;
+        }
         
         // 刮削源配置模态框事件监听器
         document.getElementById('scraper-config-form').addEventListener('submit', (e) => {
@@ -689,61 +1163,173 @@ class PageManager {
         }
     }
 
+    // 当前筛选状态
+    currentFilter = 'all';
+    
+    // 所有任务数据
+    allTasks = [];
+
     async loadTasks() {
         try {
             const tasks = await this.api.getTasks();
-            this.renderTasksTable(tasks);
+            this.allTasks = tasks;
+            this.applyTaskFilter();
+            
+            // 更新任务计数
+            const taskCountEl = document.getElementById('task-count');
+            if (taskCountEl) {
+                taskCountEl.textContent = `共 ${tasks.length} 个任务`;
+            }
+            
+            // 设置筛选按钮事件
+            this.setupTaskFilters();
         } catch (error) {
             console.error('加载任务列表失败:', error);
+            const container = document.getElementById('tasks-container');
+            if (container) {
+                container.innerHTML = '<div class="col-12 text-center text-danger py-4">加载任务失败</div>';
+            }
+            const taskCountEl = document.getElementById('task-count');
+            if (taskCountEl) {
+                taskCountEl.textContent = '加载失败';
+            }
+        }
+    }
+    
+    // 应用任务筛选
+    applyTaskFilter() {
+        let filteredTasks = [];
+        
+        if (this.currentFilter === 'all') {
+            filteredTasks = this.allTasks;
+        } else if (this.currentFilter === 'failed') {
+            filteredTasks = this.allTasks.filter(task => 
+                task.status === 'failed' || (task.status === 'completed' && task.failed_files > 0)
+            );
+        }
+        
+        this.renderTasksCards(filteredTasks);
+        
+        // 更新任务计数
+        const taskCountEl = document.getElementById('task-count');
+        if (taskCountEl) {
+            if (this.currentFilter === 'all') {
+                taskCountEl.textContent = `共 ${this.allTasks.length} 个任务`;
+            } else {
+                taskCountEl.textContent = `筛选结果: ${filteredTasks.length}/${this.allTasks.length} 个任务`;
+            }
+        }
+    }
+    
+    // 设置筛选按钮事件
+    setupTaskFilters() {
+        // 全部任务按钮
+        const filterAllBtn = document.getElementById('filter-all');
+        if (filterAllBtn) {
+            filterAllBtn.addEventListener('click', () => {
+                this.currentFilter = 'all';
+                this.updateFilterButtons();
+                this.applyTaskFilter();
+            });
+        }
+        
+        // 失败任务按钮
+        const filterFailedBtn = document.getElementById('filter-failed');
+        if (filterFailedBtn) {
+            filterFailedBtn.addEventListener('click', () => {
+                this.currentFilter = 'failed';
+                this.updateFilterButtons();
+                this.applyTaskFilter();
+            });
+        }
+    }
+    
+    // 更新筛选按钮状态
+    updateFilterButtons() {
+        const filterAllBtn = document.getElementById('filter-all');
+        const filterFailedBtn = document.getElementById('filter-failed');
+        
+        if (filterAllBtn && filterFailedBtn) {
+            // 移除所有按钮的active状态
+            filterAllBtn.classList.remove('active');
+            filterFailedBtn.classList.remove('active');
+            
+            // 为当前选中的按钮添加active状态
+            if (this.currentFilter === 'all') {
+                filterAllBtn.classList.add('active');
+            } else if (this.currentFilter === 'failed') {
+                filterFailedBtn.classList.add('active');
+            }
         }
     }
 
-    renderTasksTable(tasks) {
-        const tbody = document.getElementById('tasks-table-body');
-        if (!tbody) return;
+    renderTasksCards(tasks) {
+        const container = document.getElementById('tasks-container');
+        if (!container) return;
 
         if (tasks.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">暂无任务</td></tr>';
+            let emptyMessage = '';
+            if (this.currentFilter === 'all') {
+                emptyMessage = '<div class="col-12 text-center text-muted py-4">暂无任务</div>';
+            } else {
+                emptyMessage = '<div class="col-12 text-center text-muted py-4">暂无失败任务</div>';
+            }
+            container.innerHTML = emptyMessage;
             return;
         }
 
-        tbody.innerHTML = tasks.map(task => `
-            <tr data-task-id="${task.id}">
-                <td>
-                    <strong>${task.name}</strong>
-                    <br><small class="text-muted">${task.source_path}</small>
-                </td>
-                <td>
-                    <span class="status-badge status-${task.status}">
-                        ${this.api.getStatusText(task.status)}
-                    </span>
-                </td>
-                <td>
-                    <div class="progress" style="height: 8px;">
-                        <div class="progress-bar" style="width: ${task.progress || 0}%">
-                            ${task.progress || 0}%
+        // 使用卡片式布局渲染任务
+        container.innerHTML = tasks.map(task => `
+            <div class="col-lg-4 col-md-6 col-sm-12">
+                <div class="card task-card h-100" data-task-id="${task.id}">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-title mb-0">${task.name}</h6>
+                            <small class="text-muted">${new Date(task.created_at).toLocaleString()}</small>
+                        </div>
+                        <span class="status-badge status-${task.status}">
+                            ${this.api.getStatusText(task.status)}
+                        </span>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between mb-1">
+                                <small class="text-muted">进度</small>
+                                <small class="text-muted">${task.progress || 0}%</small>
+                            </div>
+                            <div class="progress" style="height: 8px;">
+                                <div class="progress-bar" style="width: ${task.progress || 0}%">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <small class="text-muted d-block mb-1">文件处理</small>
+                            <small>${task.processed_files || 0} / ${task.total_files || 0} 文件</small>
+                            ${task.failed_files && task.failed_files > 0 ? `
+                                <small class="text-danger ms-2">${task.failed_files} 失败</small>
+                            ` : ''}
+                        </div>
+                        
+                        <div class="mb-4">
+                            <small class="text-muted d-block mb-1">路径</small>
+                            <small class="text-truncate d-block" style="max-width: 100%;">源: ${task.source_path}</small>
+                            <small class="text-truncate d-block" style="max-width: 100%;">目标: ${task.destination_path || '-'}</small>
+                        </div>
+                        
+                        <div class="d-flex flex-wrap gap-2">
+                            ${this.getTaskActionButtons(task)}
                         </div>
                     </div>
-                </td>
-                <td>
-                    ${task.processed_files || 0} / ${task.total_files || 0}
-                </td>
-                <td>
-                    <small>${new Date(task.created_at).toLocaleString()}</small>
-                </td>
-                <td>
-                    <div class="btn-group btn-group-sm">
-                        ${this.getTaskActionButtons(task)}
-                    </div>
-                </td>
-            </tr>
+                </div>
+            </div>
         `).join('');
 
         // 绑定任务操作事件
         tasks.forEach(task => {
-            const row = tbody.querySelector(`[data-task-id="${task.id}"]`);
-            if (row) {
-                this.bindTaskActions(row, task);
+            const card = container.querySelector(`[data-task-id="${task.id}"]`);
+            if (card) {
+                this.bindTaskActions(card, task);
             }
         });
     }
@@ -755,6 +1341,13 @@ class PageManager {
         buttons.push(`<button class="btn btn-outline-info btn-sm" data-action="logs" title="查看日志">
             <i class="bi bi-file-text me-1"></i>日志
         </button>`);
+        
+        // 为有失败文件的任务添加查看失败文件按钮
+        if (task.failed_files && task.failed_files > 0) {
+            buttons.push(`<button class="btn btn-outline-danger btn-sm" data-action="failed-files" title="查看失败文件">
+                <i class="bi bi-x-circle me-1"></i>失败(${task.failed_files})
+            </button>`);
+        }
         
         switch (task.status) {
             case 'pending':
@@ -823,6 +1416,9 @@ class PageManager {
                 case 'logs':
                     this.showTaskLogs(taskId);
                     break;
+                case 'failed-files':
+                    this.showFailedFiles(taskId);
+                    break;
             }
             
             // 刷新任务列表
@@ -833,76 +1429,7 @@ class PageManager {
         }
     }
     
-    // 显示任务日志
-    showTaskLogs(taskId) {
-        try {
-            // 创建日志模态框
-            const logModal = document.createElement('div');
-            logModal.className = 'modal fade';
-            logModal.id = 'task-logs-modal';
-            logModal.tabIndex = -1;
-            logModal.innerHTML = `
-                <div class="modal-dialog modal-lg">
-                    <div class="modal-content">
-                        <div class="modal-header">
-                            <h5 class="modal-title">
-                                <i class="bi bi-file-text"></i> 任务日志 - ID: ${taskId}
-                            </h5>
-                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                        </div>
-                        <div class="modal-body">
-                            <div class="log-terminal" id="task-logs-content" style="height: 500px; overflow-y: auto; background-color: #f8f9fa; padding: 15px; font-family: monospace; white-space: pre-wrap;">
-                                <div class="text-muted text-center py-4">加载日志中...</div>
-                            </div>
-                        </div>
-                        <div class="modal-footer">
-                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
-                        </div>
-                    </div>
-                </div>
-            `;
-            
-            document.body.appendChild(logModal);
-            
-            // 显示模态框
-            const modalInstance = new bootstrap.Modal(logModal);
-            modalInstance.show();
-            
-            // 加载日志
-            const logsContent = document.getElementById('task-logs-content');
-            
-            // 暂时使用模拟日志数据
-            // 实际应用中应该从API获取真实的任务日志
-            const mockLogs = [
-                `[${new Date().toLocaleString()}] 开始处理任务 ${taskId}`,
-                `[${new Date().toLocaleString()}] 扫描源路径: /mnt/user/strm-files`,
-                `[${new Date().toLocaleString()}] 发现 15 个 STRM 文件`,
-                `[${new Date().toLocaleString()}] 开始刮削文件: movie1.strm`,
-                `[${new Date().toLocaleString()}] 成功识别为电影: 星际穿越 (2014)`,
-                `[${new Date().toLocaleString()}] 生成元数据: movie1.nfo`,
-                `[${new Date().toLocaleString()}] 刮削完成: movie1.strm`,
-                `[${new Date().toLocaleString()}] 开始刮削文件: tvshow1.strm`,
-                `[${new Date().toLocaleString()}] 成功识别为电视剧: 绝命毒师 S01E01`,
-                `[${new Date().toLocaleString()}] 生成元数据: tvshow1.nfo`,
-                `[${new Date().toLocaleString()}] 刮削完成: tvshow1.strm`,
-                `[${new Date().toLocaleString()}] 任务处理完成，成功: 10, 失败: 0, 跳过: 5`
-            ];
-            
-            logsContent.innerHTML = mockLogs.join('\n');
-            logsContent.scrollTop = logsContent.scrollHeight;
-            
-            // 模态框关闭时清理
-            logModal.addEventListener('hidden.bs.modal', () => {
-                setTimeout(() => {
-                    logModal.remove();
-                }, 100);
-            });
-            
-        } catch (error) {
-            console.error('加载任务日志失败:', error);
-            this.api.showNotification('加载日志失败: ' + error.message, 'error');
-        }
-    }
+    // 显示任务日志功能已在文件上方定义，此处删除重复定义
 
     async createTask() {
         const form = document.getElementById('task-form');
@@ -974,27 +1501,128 @@ class PageManager {
         }
     }
     
-    // 模拟目录浏览功能
+    // 优化的目录浏览功能
     browseDirectory(elementId) {
-        // 这里可以实现实际的目录浏览功能，或者调用后端API获取可用路径列表
-        // 暂时使用模拟数据
-        const mockPaths = [
+        // 获取可用路径列表（这里使用模拟数据，可以后续替换为后端API）
+        const paths = [
             '/mnt/user/media',
             '/mnt/user/downloads',
             '/mnt/user/strm-files',
-            '/media/share'
+            '/media/share',
+            '/volume1/video',
+            '/volume1/downloads',
+            'C:/Users/Public/Videos',
+            'D:/Movies',
+            'D:/TV Shows'
         ];
         
         const inputElement = document.getElementById(elementId);
-        // 显示一个简单的选择对话框
-        const selectedPath = prompt('请选择或输入路径:\n' + mockPaths.join('\n'), inputElement.value);
+        const inputGroup = inputElement.closest('.input-group');
         
-        if (selectedPath) {
-            inputElement.value = selectedPath;
-            if (elementId === 'source-path') {
-                this.checkPathMapping();
-            }
+        // 移除已存在的下拉菜单
+        const existingDropdown = document.getElementById(`path-dropdown-${elementId}`);
+        if (existingDropdown) {
+            existingDropdown.remove();
         }
+        
+        // 创建下拉菜单容器
+        const dropdown = document.createElement('div');
+        dropdown.id = `path-dropdown-${elementId}`;
+        dropdown.className = 'path-dropdown position-absolute z-50 mt-1 w-full bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto';
+        dropdown.style.top = `${inputGroup.offsetHeight}px`;
+        dropdown.style.left = '0';
+        dropdown.style.right = '0';
+        
+        // 添加搜索框
+        const searchContainer = document.createElement('div');
+        searchContainer.className = 'p-2 border-b';
+        const searchInput = document.createElement('input');
+        searchInput.type = 'text';
+        searchInput.className = 'form-control form-control-sm';
+        searchInput.placeholder = '搜索路径...';
+        searchInput.id = `search-${elementId}`;
+        searchContainer.appendChild(searchInput);
+        dropdown.appendChild(searchContainer);
+        
+        // 添加路径列表
+        const pathList = document.createElement('div');
+        pathList.className = 'path-list';
+        
+        // 函数：根据搜索条件渲染路径列表
+        const renderPathList = (searchTerm = '') => {
+            pathList.innerHTML = '';
+            
+            // 添加手动输入选项
+            const manualOption = document.createElement('div');
+            manualOption.className = 'path-item p-2 hover:bg-gray-100 cursor-pointer border-b';
+            manualOption.innerHTML = '<i class="bi bi-keyboard mr-2"></i>手动输入路径...';
+            manualOption.addEventListener('click', () => {
+                const customPath = prompt('请输入自定义路径:', inputElement.value);
+                if (customPath) {
+                    inputElement.value = customPath;
+                    if (elementId === 'source-path') {
+                        this.checkPathMapping();
+                    }
+                    dropdown.remove();
+                }
+            });
+            pathList.appendChild(manualOption);
+            
+            // 过滤并添加路径选项
+            const filteredPaths = paths.filter(path => 
+                path.toLowerCase().includes(searchTerm.toLowerCase())
+            );
+            
+            if (filteredPaths.length === 0 && searchTerm) {
+                const noResults = document.createElement('div');
+                noResults.className = 'p-3 text-center text-gray-500';
+                noResults.textContent = '没有找到匹配的路径';
+                pathList.appendChild(noResults);
+            } else {
+                filteredPaths.forEach(path => {
+                    const pathItem = document.createElement('div');
+                    pathItem.className = 'path-item p-2 hover:bg-gray-100 cursor-pointer border-b last:border-b-0';
+                    pathItem.innerHTML = `<i class="bi bi-folder mr-2"></i>${path}`;
+                    pathItem.addEventListener('click', () => {
+                        inputElement.value = path;
+                        if (elementId === 'source-path') {
+                            this.checkPathMapping();
+                        }
+                        dropdown.remove();
+                    });
+                    pathList.appendChild(pathItem);
+                });
+            }
+        };
+        
+        // 初始渲染
+        renderPathList();
+        
+        // 添加搜索事件监听
+        searchInput.addEventListener('input', () => {
+            renderPathList(searchInput.value);
+        });
+        
+        dropdown.appendChild(pathList);
+        
+        // 设置输入组为相对定位，使下拉菜单能正确定位
+        inputGroup.style.position = 'relative';
+        inputGroup.appendChild(dropdown);
+        
+        // 添加点击外部关闭下拉菜单的事件
+        const closeDropdown = (event) => {
+            if (!dropdown.contains(event.target) && event.target !== inputGroup.querySelector('button')) {
+                dropdown.remove();
+                document.removeEventListener('click', closeDropdown);
+            }
+        };
+        
+        setTimeout(() => {
+            document.addEventListener('click', closeDropdown);
+        }, 100);
+        
+        // 自动聚焦搜索框
+        searchInput.focus();
     }
 
     async loadScrapers() {
@@ -1767,6 +2395,14 @@ tv:
         document.getElementById('tv-show-format').value = settings.tv_show_format || '{title} ({year})';
         document.getElementById('tv-season-format').value = settings.tv_season_format || 'Season {season:02d}';
         document.getElementById('tv-episode-format').value = settings.tv_episode_format || 'S{season:02d}E{episode:02d}';
+        
+        // 更新预览显示
+        setTimeout(() => {
+            // 使用setTimeout确保DOM已更新后再执行
+            if (typeof updatePreviewDisplay === 'function') {
+                updatePreviewDisplay();
+            }
+        }, 10);
     }
 
     // 保存通知设置
@@ -1855,6 +2491,10 @@ tv:
     // 加载默认电影重命名格式
     loadDefaultMovieFormat() {
         document.getElementById('movie-rename-format').value = '{title} ({year})';
+        // 更新预览
+        if (typeof updateMoviePreview === 'function') {
+            updateMoviePreview();
+        }
         this.api.showNotification('已加载默认电影重命名格式', 'info');
     }
 
@@ -1863,6 +2503,10 @@ tv:
         document.getElementById('tv-show-format').value = '{title} ({year})';
         document.getElementById('tv-season-format').value = 'Season {season:02d}';
         document.getElementById('tv-episode-format').value = 'S{season:02d}E{episode:02d}';
+        // 更新预览
+        if (typeof updatePreviewDisplay === 'function') {
+            updatePreviewDisplay();
+        }
         this.api.showNotification('已加载默认电视剧重命名格式', 'info');
     }
 

@@ -33,29 +33,27 @@ class BaseScraper:
             else:
                 # HTTP/HTTPS代理
                 proxy_auth = None
-                if '@' in settings.proxy_url:
-                    # 提取认证信息
-                    proxy_url_no_auth = settings.proxy_url
-                    if settings.proxy_url.startswith('http'):
-                        proxy_parts = settings.proxy_url.replace('http://', '').replace('https://', '').split('@')
-                        if len(proxy_parts) == 2:
-                            auth_part, host_part = proxy_parts
-                            if ':' in auth_part:
-                                username, password = auth_part.split(':', 1)
-                                proxy_auth = aiohttp.BasicAuth(username, password)
-                                proxy_url_no_auth = f"http://{host_part}"
-                    
-                    proxy = proxy_url_no_auth
-                else:
-                    proxy = settings.proxy_url
+                proxy = settings.proxy_url
                 
+                # 提取认证信息
+                if '@' in proxy and proxy.startswith(('http://', 'https://')):
+                    proxy_parts = proxy.replace('http://', '').replace('https://', '').split('@')
+                    if len(proxy_parts) == 2:
+                        auth_part, host_part = proxy_parts
+                        if ':' in auth_part:
+                            username, password = auth_part.split(':', 1)
+                            proxy_auth = aiohttp.BasicAuth(username, password)
+                            proxy = f"http://{host_part}"
+                
+                # 创建会话时直接传入代理配置
                 self.session = aiohttp.ClientSession(
                     connector=connector,
                     timeout=timeout,
-                    trust_env=True
+                    trust_env=True,
+                    connector_owner=False  # 让session负责关闭connector
                 )
-                # 设置代理
-                self.session._proxy = proxy
+                # 标准方式设置代理
+                self.session._default_proxy = proxy
                 if proxy_auth:
                     self.session._proxy_auth = proxy_auth
         else:

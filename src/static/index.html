@@ -408,6 +408,12 @@
                     </a>
                 </li>
                 <li class="nav-item">
+                    <a class="nav-link" href="#" data-page="rules">
+                        <i class="bi bi-file-code"></i>
+                        <span class="nav-text">规则设置</span>
+                    </a>
+                </li>
+                <li class="nav-item">
                     <a class="nav-link" href="#" data-page="settings">
                         <i class="bi bi-gear"></i>
                         <span class="nav-text">系统设置</span>
@@ -540,7 +546,7 @@
                         
                         <!-- 任务管理页面 -->
                         <div id="tasks-page" class="page-content" style="display: none;">
-                            <div class="card">
+                            <div class="card mb-4">
                                 <div class="card-header d-flex justify-content-between align-items-center">
                                     <h5 class="mb-0">
                                         <i class="bi bi-list-task"></i> 任务列表
@@ -549,26 +555,31 @@
                                         <i class="bi bi-plus"></i> 新建任务
                                     </button>
                                 </div>
+                            </div>
+                            
+                            <!-- 筛选控件 -->
+                            <div class="card mb-4">
                                 <div class="card-body">
-                                    <div class="table-responsive">
-                                        <table class="table table-hover">
-                                            <thead>
-                                                <tr>
-                                                    <th class="d-none d-md-table-cell">任务名称</th>
-                                                    <th>状态</th>
-                                                    <th class="d-none d-lg-table-cell">进度</th>
-                                                    <th class="d-none d-xl-table-cell">文件数</th>
-                                                    <th class="d-none d-lg-table-cell">创建时间</th>
-                                                    <th>操作</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody id="tasks-table-body">
-                                                <tr>
-                                                    <td colspan="6" class="text-center text-muted">加载中...</td>
-                                                </tr>
-                                            </tbody>
-                                        </table>
+                                    <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center">
+                                        <div>
+                                            <span class="me-3 text-muted">筛选任务:</span>
+                                            <div class="btn-group" role="group">
+                                                <button type="button" class="btn btn-outline-primary active" id="filter-all">全部任务</button>
+                                                <button type="button" class="btn btn-outline-primary" id="filter-failed">失败任务</button>
+                                            </div>
+                                        </div>
+                                        <div class="text-muted">
+                                            <span id="task-count">加载中...</span>
+                                        </div>
                                     </div>
+                                </div>
+                            </div>
+                            
+                            <!-- 任务卡片容器 -->
+                            <div id="tasks-container" class="row g-4">
+                                <div class="col-12 text-center text-muted py-4">
+                                    <div class="spinner-border mb-3" role="status"></div>
+                                    <p>加载任务中...</p>
                                 </div>
                             </div>
                         </div>
@@ -895,13 +906,29 @@ tv:<br>
                                                         <i class="bi bi-film"></i> 电影重命名格式
                                                     </h6>
                                                     <div class="mb-3">
+                                                        <label for="movie-template-select" class="form-label">快速选择模板</label>
+                                                        <select class="form-select" id="movie-template-select">
+                                                            <option value="">请选择模板...</option>
+                                                            <option value="{title} ({year})">(默认) {title} ({year})</option>
+                                                            <option value="{title}">{title}</option>
+                                                            <option value="{title} ({year}) [{tmdb_id}]">{title} ({year}) [{tmdb_id}]</option>
+                                                            <option value="{title} ({year}) [{imdb_id}]">{title} ({year}) [{imdb_id}]</option>
+                                                            <option value="{year} - {title}">{year} - {title}</option>
+                                                            <option value="{original_title} ({year})">{original_title} ({year})</option>
+                                                            <option value="自定义">自定义格式...</option>
+                                                        </select>
+                                                    </div>
+                                                    <div class="mb-3">
                                                         <label for="movie-rename-format" class="form-label">电影命名格式</label>
                                                         <input type="text" class="form-control" id="movie-rename-format" 
                                                                value="{title} ({year})" placeholder="{title} ({year})">
                                                         <div class="form-text">
-                                                            可用变量：{title}, {year}, {original_title}, {imdb_id}, {tmdb_id}<br>
-                                                            示例："{title} ({year})" → "阿凡达 (2009)"
+                                                            可用变量：{title}, {year}, {original_title}, {imdb_id}, {tmdb_id}
                                                         </div>
+                                                    </div>
+                                                    <div class="mb-3 p-3 bg-light rounded border">
+                                                        <strong>预览：</strong>
+                                                        <span id="movie-format-example" class="text-primary">阿凡达 (2009)</span>
                                                     </div>
                                                     <div class="mb-3">
                                                         <button type="button" class="btn btn-outline-primary btn-sm" id="load-movie-default">
@@ -919,9 +946,19 @@ tv:<br>
                                                         <i class="bi bi-collection-play"></i> 电视剧重命名格式
                                                     </h6>
                                                     <div class="mb-3">
+                                                        <label for="tv-show-template-select" class="form-label">剧集文件夹模板</label>
+                                                        <select class="form-select" id="tv-show-template-select">
+                                                            <option value="">请选择模板...</option>
+                                                            <option value="{title} ({year})">(默认) {title} ({year})</option>
+                                                            <option value="{title}">{title}</option>
+                                                            <option value="{original_title} ({year})">{original_title} ({year})</option>
+                                                            <option value="自定义">自定义格式...</option>
+                                                        </select>
+                                                    </div>
+                                                    <div class="mb-3">
                                                         <label for="tv-show-format" class="form-label">剧集文件夹格式</label>
                                                         <input type="text" class="form-control" id="tv-show-format" 
-                                                               value="{title} ({year})" placeholder="{title} ({year})">
+                                                               value="{title} ({year})" placeholder="{title} ({year})"></div>
                                                         <div class="form-text">
                                                             可用变量：{title}, {year}, {original_title}, {imdb_id}, {tmdb_id}<br>
                                                             示例："{title} ({year})" → "权力的游戏 (2011)"
@@ -941,9 +978,39 @@ tv:<br>
                                                         <input type="text" class="form-control" id="tv-episode-format" 
                                                                value="S{season:02d}E{episode:02d}" placeholder="S{season:02d}E{episode:02d}">
                                                         <div class="form-text">
-                                                            可用变量：{season}, {season:02d}, {episode}, {episode:02d}, {title}<br>
-                                                            示例："S{season:02d}E{episode:02d} - {title}" → "S01E01 - 凛冬将至"
+                                                            可用变量：{season}, {season:02d}, {episode}, {episode:02d}, {title}
                                                         </div>
+                                                    </div>
+                                                    <div class="mb-3 p-3 bg-light rounded border">
+                                                        <strong>预览：</strong>
+                                                        <span id="tv-show-format-example" class="text-primary">权力的游戏 (2011)</span>
+                                                    </div>
+                                                    
+                                                    <!-- 单集文件格式模板 -->
+                                                    <div class="mb-3">
+                                                        <label for="tv-episode-template-select" class="form-label">单集文件模板</label>
+                                                        <select class="form-select" id="tv-episode-template-select">
+                                                            <option value="">请选择模板...</option>
+                                                            <option value="S{season:02d}E{episode:02d}">(默认) S{season:02d}E{episode:02d}</option>
+                                                            <option value="S{season:02d}E{episode:02d} - {title}">S{season:02d}E{episode:02d} - {title}</option>
+                                                            <option value="第{season}季第{episode}集">第{season}季第{episode}集</option>
+                                                            <option value="第{season}季第{episode}集 - {title}">第{season}季第{episode}集 - {title}</option>
+                                                            <option value="S{season}E{episode}">S{season}E{episode}</option>
+                                                            <option value="{season}x{episode}">{season}x{episode}</option>
+                                                            <option value="自定义">自定义格式...</option>
+                                                        </select>
+                                                    </div>
+                                                    <div class="mb-3">
+                                                        <label for="tv-episode-format" class="form-label">单集文件格式</label>
+                                                        <input type="text" class="form-control" id="tv-episode-format" 
+                                                               value="S{season:02d}E{episode:02d}" placeholder="S{season:02d}E{episode:02d}">
+                                                        <div class="form-text">
+                                                            可用变量：{season}, {season:02d}, {episode}, {episode:02d}, {title}
+                                                        </div>
+                                                    </div>
+                                                    <div class="mb-3 p-3 bg-light rounded border">
+                                                        <strong>预览：</strong>
+                                                        <span id="tv-episode-format-example" class="text-primary">S01E01</span>
                                                     </div>
                                                     <div class="mb-3">
                                                         <button type="button" class="btn btn-outline-primary btn-sm" id="load-tv-default">

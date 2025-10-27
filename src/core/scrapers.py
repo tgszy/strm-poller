@@ -513,6 +513,141 @@ class IMDbScraper(BaseScraper):
         async with self.session.get(self.base_url, headers=headers) as response:
             return response.status == 200
 
+class FMartScraper(BaseScraper):
+    """FMart刮削器"""
+    
+    def __init__(self, config: Dict[str, Any]):
+        super().__init__('fmart', config)
+        self.api_key = config.get('api_key')
+        self.cookie = config.get('cookie', '')
+        self.base_url = 'https://www.fmart.net'
+        self.search_url = 'https://www.fmart.net/search'
+        self.user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        
+    async def _scrape_impl(self, media_info: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        title = media_info.get('title')
+        year = media_info.get('year')
+        
+        # 搜索媒体
+        search_params = {
+            'word': title,
+            'category': 'all'
+        }
+        
+        headers = {
+            'User-Agent': self.user_agent,
+            'Cookie': self.cookie,
+            'Referer': self.base_url
+        }
+        
+        async with self.session.get(self.search_url, params=search_params, headers=headers) as response:
+            if response.status != 200:
+                logger.error(f"FMart搜索失败: HTTP {response.status}")
+                return None
+                
+            html = await response.text()
+            
+            # 解析搜索结果
+            item_links = re.findall(r'<a[^>]*href="https://www.fmart.net/thread-(\d+)-\d+-\d+\.html"[^>]*title="[^>]*>([^<]+)</a>', html)
+            
+            if not item_links:
+                logger.warning(f"FMart: 未找到匹配结果: {title}")
+                return None
+                
+            # 获取第一个结果的详细信息
+            fmart_id = item_links[0][0]
+            detail_url = f"https://www.fmart.net/thread-{fmart_id}-1-1.html"
+            
+            async with self.session.get(detail_url, headers=headers) as detail_response:
+                if detail_response.status != 200:
+                    logger.error(f"FMart获取详情失败: HTTP {detail_response.status}")
+                    return None
+                    
+                detail_html = await detail_response.text()
+                
+                # 解析FMart详情页
+                scraped_data = self._parse_fmart_detail(detail_html, fmart_id)
+                if scraped_data:
+                    scraped_data['title'] = title  # 使用原始标题
+                    scraped_data['year'] = year or scraped_data.get('year')
+                    scraped_data['source'] = 'fmart'
+                    
+                return scraped_data
+                
+    def _parse_fmart_detail(self, html: str, fmart_id: str) -> Optional[Dict[str, Any]]:
+        """解析FMart详情页"""
+        try:
+            # 提取标题
+            title_match = re.search(r'<h1[^>]*class="ts"[^>]*>([^<]+)</h1>', html)
+            title = title_match.group(1) if title_match else ''
+            
+            # 尝试从标题中提取年份
+            year_match = re.search(r'(\d{4})', title)
+            year = int(year_match.group(1)) if year_match else None
+            
+            # 提取评分（如果有）
+            rating_match = re.search(r'<span[^>]*class="ratings"[^>]*>([^<]+)</span>', html)
+            rating = float(rating_match.group(1)) if rating_match else 0
+            
+            # 提取简介
+            summary_match = re.search(r'<div[^>]*class="t_f"[^>]*>(.*?)</div>', html, re.DOTALL)
+            if summary_match:
+                # 清理HTML标签
+                overview = re.sub(r'<[^>]+>', '', summary_match.group(1)).strip()
+            else:
+                overview = ''
+            
+            # 提取海报
+            poster_match = re.search(r'<img[^>]*src="([^"\s]*\.(jpg|png|gif))"[^>]*alt="[^>]*"', html)
+            poster_path = poster_match.group(1) if poster_match else ''
+            
+            # 提取类型（根据关键词）
+            genres = []
+            if re.search(r'电影|movie', html, re.IGNORECASE):
+                genres.append('电影')
+            if re.search(r'剧集|series|tv', html, re.IGNORECASE):
+                genres.append('剧集')
+            if re.search(r'动画|anime', html, re.IGNORECASE):
+                genres.append('动画')
+            
+            # 提取导演和演员（如果有）
+            director_match = re.search(r'导演[^>]*:([^<]*)', html, re.IGNORECASE)
+            director = [director_match.group(1).strip()] if director_match else []
+            
+            cast_match = re.search(r'演员[^>]*:([^<]*)', html, re.IGNORECASE)
+            cast = []
+            if cast_match:
+                # 分割演员列表
+                cast = [c.strip() for c in re.split(r'[，,]+', cast_match.group(1).strip())]
+            
+            return {
+                'title': title,
+                'year': year,
+                'overview': overview,
+                'poster_path': poster_path,
+                'backdrop_path': None,
+                'genres': genres,
+                'rating': rating,
+                'cast': cast[:5],
+                'director': director[:3],
+                'fmart_id': fmart_id,
+                'source': 'fmart'
+            }
+            
+        except Exception as e:
+            logger.error(f"解析FMart详情失败: {e}")
+            return None
+            
+    async def _test_connection_impl(self) -> bool:
+        """测试FMart连接"""
+        headers = {
+            'User-Agent': self.user_agent,
+            'Cookie': self.cookie
+        }
+        
+        async with self.session.get(self.base_url, headers=headers) as response:
+            return response.status == 200
+
 class TVDBScraper(BaseScraper):
     """TVDB刮削器"""
     
@@ -641,7 +776,8 @@ class ScraperManager:
             'douban': DoubanScraper,
             'bangumi': BangumiScraper,
             'imdb': IMDbScraper,
-            'tvdb': TVDBScraper
+            'tvdb': TVDBScraper,
+            'fmart': FMartScraper
         }
         
         for name, scraper_class in scraper_classes.items():

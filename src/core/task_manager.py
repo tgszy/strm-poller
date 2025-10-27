@@ -570,6 +570,115 @@ class TaskWorker:
         # 所有规则都匹配
         return True
     
+    async def retry_single_file(self, task_id: int, file_id: int, new_filename: str) -> dict:
+        """重试单个失败文件"""
+        db = next(get_db())
+        try:
+            # 获取任务和文件记录
+            task = db.query(Task).filter(Task.id == task_id).first()
+            if not task:
+                raise ValueError(f"任务不存在: {task_id}")
+            
+            file_record = db.query(FileRecord).filter(
+                FileRecord.id == file_id,
+                FileRecord.task_id == task_id,
+                FileRecord.status == "failed"
+            ).first()
+            
+            if not file_record:
+                raise ValueError(f"失败文件不存在或已处理: {file_id}")
+            
+            source_path = file_record.source_path
+            logger.info(f"开始重试文件: {source_path}, 新文件名: {new_filename}")
+            
+            try:
+                # 读取STRM文件内容
+                with open(source_path, 'r', encoding='utf-8') as f:
+                    media_url = f.read().strip()
+                
+                if not media_url:
+                    raise ValueError("STRM文件为空")
+                
+                # 从新文件名提取媒体信息
+                media_info = self._extract_media_info(f"{new_filename}.strm")
+                
+                # 刮削元数据
+                scraped_data = None
+                if self.scraper_manager:
+                    scraped_data = await self.scraper_manager.scrape_media(media_info)
+                
+                if not scraped_data:
+                    # 仍然无法刮削
+                    file_record.error_message = "重新刮削失败，无法识别媒体信息"
+                    db.commit()
+                    
+                    # 发送通知
+                    await notification_manager.notify(
+                        title=f"文件重试失败: {new_filename}",
+                        message=f"文件路径: {source_path}\n错误: 无法识别媒体信息\n任务ID: {task_id}",
+                        event_type=NotificationEvents.FILE_FAILED
+                    )
+                    
+                    return {
+                        "success": False,
+                        "message": "重新刮削失败，无法识别媒体信息"
+                    }
+                
+                # 组织文件到目标位置
+                worker = TaskWorker(task, self)
+                destination_path = worker._organize_file(source_path, scraped_data)
+                
+                # 更新文件记录
+                file_record.status = "completed"
+                file_record.error_message = None
+                file_record.destination_path = destination_path
+                file_record.scraped_data = json.dumps(scraped_data, ensure_ascii=False)
+                
+                # 更新任务统计
+                task.failed_files = max(0, task.failed_files - 1)
+                task.processed_files += 1
+                if task.total_files > 0:
+                    task.progress = (task.processed_files / task.total_files) * 100
+                
+                db.commit()
+                
+                logger.info(f"文件重试成功: {source_path} -> {destination_path}")
+                
+                # 发送成功通知
+                await notification_manager.notify(
+                    title=f"文件重试成功: {new_filename}",
+                    message=f"原路径: {source_path}\n目标路径: {destination_path}\n媒体标题: {scraped_data.get('title')}\n年份: {scraped_data.get('year')}",
+                    event_type=NotificationEvents.FILE_PROCESSED
+                )
+                
+                return {
+                    "success": True,
+                    "message": "文件重试成功",
+                    "media_info": {
+                        "title": scraped_data.get('title'),
+                        "year": scraped_data.get('year'),
+                        "type": scraped_data.get('type')
+                    }
+                }
+                
+            except Exception as e:
+                # 更新错误信息
+                file_record.error_message = str(e)
+                db.commit()
+                
+                logger.error(f"文件重试失败: {e}")
+                
+                return {
+                    "success": False,
+                    "message": str(e)
+                }
+                
+        except Exception as e:
+            logger.error(f"重试单个文件时发生错误: {e}")
+            raise
+        finally:
+            db.close()
+    
     def _get_category(self, media_type: str) -> str:
         """获取分类"""
         categories = {

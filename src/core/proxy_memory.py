@@ -95,6 +95,74 @@ class ProxyManager:
                 'timestamp': datetime.now().isoformat()
             }
             
+    async def test_proxy_url(self, proxy_url: str) -> Dict[str, Any]:
+        """测试指定的代理URL"""
+        start_time = datetime.now()
+        
+        try:
+            # 创建一个临时会话进行测试
+            timeout = aiohttp.ClientTimeout(total=self.config.timeout)
+            
+            # 检查代理类型
+            connector = aiohttp.TCPConnector(ssl=False)
+            
+            async with aiohttp.ClientSession(
+                connector=connector,
+                timeout=timeout,
+                headers={'User-Agent': 'STRM-Poller/3.0'}
+            ) as temp_session:
+                async with temp_session.get(
+                    self.config.test_url,
+                    proxy=proxy_url,
+                    timeout=aiohttp.ClientTimeout(total=self.config.timeout)
+                ) as response:
+                    response_time = (datetime.now() - start_time).total_seconds()
+                    
+                    if response.status == 200:
+                        data = await response.json()
+                        return {
+                            'success': True,
+                            'message': f'代理测试成功，响应时间: {response_time:.2f}s',
+                            'response_time': response_time,
+                            'ip': data.get('origin', 'Unknown'),
+                            'timestamp': datetime.now().isoformat()
+                        }
+                    else:
+                        return {
+                            'success': False,
+                            'message': f'代理测试失败，HTTP状态码: {response.status}',
+                            'response_time': response_time,
+                            'timestamp': datetime.now().isoformat()
+                        }
+            
+        except asyncio.TimeoutError:
+            response_time = (datetime.now() - start_time).total_seconds()
+            return {
+                'success': False,
+                'message': f'代理测试超时 ({self.config.timeout}s)',
+                'response_time': response_time,
+                'timestamp': datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            response_time = (datetime.now() - start_time).total_seconds()
+            return {
+                'success': False,
+                'message': f'代理测试异常: {str(e)}',
+                'response_time': response_time,
+                'timestamp': datetime.now().isoformat()
+            }
+            
+    async def test_proxy(self) -> Dict[str, Any]:
+        """测试代理连接"""
+        if not self.config.enabled:
+            return {
+                'success': False,
+                'message': '代理未启用',
+                'response_time': 0,
+                'timestamp': datetime.now().isoformat()
+            }
+            
         start_time = datetime.now()
         
         try:

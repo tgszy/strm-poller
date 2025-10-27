@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
@@ -737,6 +737,111 @@ async def delete_task(task_id: int):
     finally:
         db.close()
 
+# 任务文件管理API
+@app.get("/api/tasks/{task_id}/files")
+async def get_task_files(task_id: int, status: Optional[str] = Query(None, description="文件状态过滤，支持failed,success等")):
+    """获取任务文件列表"""
+    db = next(get_db())
+    try:
+        # 检查任务是否存在
+        task = db.query(Task).filter(Task.id == task_id).first()
+        if not task:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        
+        # 查询文件记录
+        query = db.query(FileRecord).filter(FileRecord.task_id == task_id)
+        
+        # 如果指定了状态过滤
+        if status:
+            query = query.filter(FileRecord.status == status)
+        
+        files = query.all()
+        
+        # 转换为响应格式
+        return {
+            "files": [
+                {
+                    "id": file.id,
+                    "file_name": os.path.basename(file.file_path),
+                    "file_path": file.file_path,
+                    "status": file.status,
+                    "error_message": file.error_message,
+                    "created_at": file.created_at.isoformat() if file.created_at else None
+                }
+                for file in files
+            ]
+        }
+    finally:
+        db.close()
+
+# 任务日志API
+@app.get("/api/tasks/{task_id}/logs")
+async def get_task_logs(task_id: int):
+    """获取任务日志"""
+    db = next(get_db())
+    try:
+        # 检查任务是否存在
+        task = db.query(Task).filter(Task.id == task_id).first()
+        if not task:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        
+        # 获取任务日志记录
+        # 这里我们从数据库中获取与任务相关的文件处理日志
+        # 实际应用中，可能需要专门的日志表来存储更详细的日志
+        
+        # 从文件记录中提取日志信息
+        file_records = db.query(FileRecord).filter(FileRecord.task_id == task_id).order_by(FileRecord.created_at).all()
+        
+        logs = []
+        
+        # 添加任务开始日志
+        if task.started_at:
+            logs.append(f"[{task.started_at.strftime('%Y-%m-%d %H:%M:%S')}] 任务开始处理: {task.name}")
+            logs.append(f"[{task.started_at.strftime('%Y-%m-%d %H:%M:%S')}] 扫描源路径: {task.source_path}")
+            logs.append(f"[{task.started_at.strftime('%Y-%m-%d %H:%M:%S')}] 目标路径: {task.destination_path}")
+            logs.append(f"[{task.started_at.strftime('%Y-%m-%d %H:%M:%S')}] 组织策略: {task.organize_strategy}")
+        
+        # 添加文件处理日志
+        for file in file_records:
+            timestamp = file.created_at.strftime('%Y-%m-%d %H:%M:%S') if file.created_at else datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            
+            if file.status == "success":
+                logs.append(f"[{timestamp}] 成功 - {os.path.basename(file.file_path)}")
+            elif file.status == "failed":
+                error_msg = file.error_message if file.error_message else "处理失败"
+                logs.append(f"[{timestamp}] ERROR - {os.path.basename(file.file_path)} - {error_msg}")
+            elif file.status == "skipped":
+                logs.append(f"[{timestamp}] 跳过 - {os.path.basename(file.file_path)}")
+        
+        # 添加任务完成日志
+        if task.completed_at:
+            logs.append(f"[{task.completed_at.strftime('%Y-%m-%d %H:%M:%S')}] 任务处理完成: {task.name}")
+            logs.append(f"[{task.completed_at.strftime('%Y-%m-%d %H:%M:%S')}] 统计: 总数 {task.total_files}, 成功 {task.processed_files}, 失败 {task.failed_files}")
+        
+        # 如果没有日志，添加默认日志
+        if not logs:
+            logs.append(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 任务: {task.name} (ID: {task_id})")
+            logs.append(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 状态: {task.status}")
+        
+        return {"logs": logs}
+    finally:
+        db.close()
+
+# 定义重试单个文件的请求模型
+class RetryFileRequest(BaseModel):
+    new_filename: str
+
+@app.post("/api/tasks/{task_id}/files/{file_id}/retry")
+async def retry_single_file(task_id: int, file_id: int, request: RetryFileRequest):
+    """重试单个失败文件"""
+    try:
+        # 调用task_manager的重试单个文件方法
+        result = await task_manager.retry_single_file(task_id, file_id, request.new_filename)
+        return result
+    except Exception as e:
+        logger.error(f"重试单个文件失败: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
 # 代理和内存管理API
 @app.get("/api/proxy/status")
 async def get_proxy_status():
@@ -745,12 +850,20 @@ async def get_proxy_status():
         return {"error": "代理管理器未初始化"}
     return proxy_manager.get_status()
 
+class ProxyTestRequest(BaseModel):
+    proxy_url: Optional[str] = None
+
 @app.post("/api/proxy/test")
-async def test_proxy_connection():
+async def test_proxy_connection(request: ProxyTestRequest):
     """测试代理连接"""
     if not proxy_manager:
         return {"error": "代理管理器未初始化"}
-    return await proxy_manager.test_proxy()
+    
+    # 如果提供了代理URL，则测试该URL，否则测试当前配置的代理
+    if request.proxy_url:
+        return await proxy_manager.test_proxy_url(request.proxy_url)
+    else:
+        return await proxy_manager.test_proxy()
 
 @app.put("/api/proxy/config")
 async def update_proxy_config(config: ProxyConfigModel):

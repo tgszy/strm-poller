@@ -66,6 +66,16 @@ def init_default_scrapers():
                 'priority': 4,
                 'timeout': 30,
                 'retry_count': 3
+            },
+            {
+                'name': 'fmart',
+                'enabled': True,
+                'api_key': None,
+                'cookie': '',  # 用户需要自行配置
+                'api_url': 'https://www.fmart.net',  # 默认API地址
+                'priority': 5,
+                'timeout': 30,
+                'retry_count': 3
             }
         ]
         
