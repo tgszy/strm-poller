@@ -394,6 +394,7 @@
                         <span class="nav-text">任务管理</span>
                     </a>
                 </li>
+                <!-- 导航项 -->
                 <li class="nav-item">
                     <a class="nav-link" href="#" data-page="scrapers">
                         <i class="bi bi-search"></i>
@@ -415,18 +416,7 @@
             </ul>
         </nav>
         
-        <div class="sidebar-footer" style="position: absolute; bottom: 1rem; left: 0; right: 0; padding: 0 1.5rem;">
-            <div class="d-flex flex-column gap-2">
-                <button class="btn btn-light btn-sm w-100" id="refresh-btn">
-                    <i class="bi bi-arrow-clockwise"></i>
-                    <span class="nav-text">刷新</span>
-                </button>
-                <button class="btn btn-outline-light btn-sm w-100" id="add-task-btn" data-bs-toggle="modal" data-bs-target="#taskModal">
-                    <i class="bi bi-plus-circle"></i>
-                    <span class="nav-text">新建任务</span>
-                </button>
-            </div>
-        </div>
+
     </div>
 
     <!-- 主内容区 -->
@@ -439,8 +429,14 @@
                         <h1 class="page-title mb-2" id="page-title">仪表盘</h1>
                         <p class="page-subtitle text-muted mb-0">飞牛NAS STRM文件自动整理服务</p>
                     </div>
-                    <div class="d-none d-md-block">
-                        <div class="badge bg-primary fs-6">v1.0.0</div>
+                    <div class="d-flex gap-3">
+                        <button class="btn btn-light" id="refresh-btn">
+                            <i class="bi bi-arrow-clockwise me-2"></i>刷新
+                        </button>
+                        <button class="btn btn-primary" id="add-task-btn" data-bs-toggle="modal" data-bs-target="#taskModal">
+                            <i class="bi bi-plus-circle me-2"></i>新建任务
+                        </button>
+                        <div class="badge bg-primary fs-6 d-none d-md-block">v1.0.0</div>
                     </div>
                 </div>
             </div>
@@ -1011,34 +1007,116 @@ tv:<br>
                 <div class="modal-body">
                     <form id="task-form">
                         <div class="mb-3">
-                            <label for="task-name" class="form-label">任务名称</label>
-                            <input type="text" class="form-control" id="task-name" required>
+                            <label for="task-name" class="form-label">任务名称 <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="task-name" placeholder="请输入任务名称" required>
+                            <div class="form-text">用于区分不同任务的标识</div>
                         </div>
+                        
+                        <div class="mb-3">
+                            <label for="task-description" class="form-label">任务备注</label>
+                            <textarea class="form-control" id="task-description" rows="2" placeholder="请输入任务描述或备注信息"></textarea>
+                        </div>
+                        
                         <div class="row">
                             <div class="col-md-6">
                                 <div class="mb-3">
-                                    <label for="source-path" class="form-label">源路径</label>
-                                    <input type="text" class="form-control" id="source-path" 
-                                           placeholder="/mnt/user/aliyun" required>
-                                    <div class="form-text">STRM文件所在目录</div>
+                                    <label for="source-path" class="form-label">STRM源路径 <span class="text-danger">*</span></label>
+                                    <div class="input-group">
+                                        <input type="text" class="form-control" id="source-path" 
+                                               placeholder="请输入或选择STRM文件所在目录" required>
+                                        <button type="button" class="btn btn-outline-secondary" id="browse-source-btn">
+                                            <i class="bi bi-folder2"></i>
+                                        </button>
+                                    </div>
+                                    <div class="form-text">
+                                        支持直接粘贴路径或下拉选择<br>
+                                        <span id="path-mapping-warning" class="text-warning d-none">
+                                            <i class="bi bi-exclamation-triangle"></i> 注意：请检查路径映射是否正确
+                                        </span>
+                                    </div>
                                 </div>
                             </div>
                             <div class="col-md-6">
                                 <div class="mb-3">
-                                    <label for="destination-path" class="form-label">目标路径</label>
-                                    <input type="text" class="form-control" id="destination-path" 
-                                           placeholder="/mnt/user/emby" required>
-                                    <div class="form-text">整理后的媒体库目录</div>
+                                    <label for="destination-path" class="form-label">目标路径 <span class="text-danger">*</span></label>
+                                    <div class="input-group">
+                                        <input type="text" class="form-control" id="destination-path" 
+                                               placeholder="请输入或选择整理后的目标目录" required>
+                                        <button type="button" class="btn btn-outline-secondary" id="browse-dest-btn">
+                                            <i class="bi bi-folder2"></i>
+                                        </button>
+                                    </div>
+                                    <div class="form-text">整理后的媒体文件存储目录</div>
                                 </div>
                             </div>
                         </div>
-                        <div class="mb-3">
-                            <label for="organize-strategy" class="form-label">整理策略</label>
-                            <select class="form-select" id="organize-strategy" required>
-                                <option value="category">分类别（电影/电视剧/动漫）</option>
-                                <option value="type">分类型（movie/tv/anime）</option>
-                                <option value="none">不整理（保持原结构）</option>
-                            </select>
+                        
+                        <div class="mb-4">
+                            <h5 class="border-bottom pb-2">整理模式 <span class="text-danger">*</span></h5>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="radio" name="organize-mode" id="mode-scrape-only" value="scrape-only" checked>
+                                <label class="form-check-label" for="mode-scrape-only">
+                                    <i class="bi bi-search"></i> 仅刮削，不整理
+                                </label>
+                                <div class="form-text ms-5">在原文件夹内进行刮削，不改变文件结构</div>
+                            </div>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="radio" name="organize-mode" id="mode-category" value="category">
+                                <label class="form-check-label" for="mode-category">
+                                    <i class="bi bi-tags"></i> 分类别整理
+                                </label>
+                                <div class="form-text ms-5">按一级二级规则策略整理，生成电影、电视剧等目录</div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-4">
+                            <h5 class="border-bottom pb-2">重命名设置</h5>
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" id="enable-rename" value="true">
+                                <label class="form-check-label" for="enable-rename">启用自动重命名</label>
+                            </div>
+                            <div class="form-text">
+                                启用后，将根据刮削结果自动识别媒体信息并按规则重命名文件
+                            </div>
+                        </div>
+                        
+                        <div class="mb-4">
+                            <h5 class="border-bottom pb-2">目录监控设置</h5>
+                            <div class="form-check mb-3">
+                                <input class="form-check-input" type="radio" name="monitor-type" id="monitor-none" value="none" checked>
+                                <label class="form-check-label" for="monitor-none">
+                                    <i class="bi bi-pause-circle"></i> 不监控
+                                </label>
+                            </div>
+                            <div class="form-check mb-3">
+                                <input class="form-check-input" type="radio" name="monitor-type" id="monitor-realtime" value="realtime">
+                                <label class="form-check-label" for="monitor-realtime">
+                                    <i class="bi bi-broadcast"></i> 实时监控
+                                </label>
+                                <div class="form-text ms-5">监控路径内出现新文件立即进行整理</div>
+                            </div>
+                            <div class="form-check mb-3">
+                                <input class="form-check-input" type="radio" name="monitor-type" id="monitor-schedule" value="schedule">
+                                <label class="form-check-label" for="monitor-schedule">
+                                    <i class="bi bi-clock"></i> 定时监控
+                                </label>
+                                <div class="form-text ms-5 mb-2">每天在指定时间进行增量整理</div>
+                                <div class="ms-5 input-group w-50">
+                                    <input type="time" class="form-control" id="schedule-time" value="03:00">
+                                    <span class="input-group-text">推荐在低峰时段（如凌晨3点）</span>
+                                </div>
+                            </div>
+                            <div class="form-check mb-3">
+                                <input class="form-check-input" type="radio" name="monitor-type" id="monitor-interval" value="interval">
+                                <label class="form-check-label" for="monitor-interval">
+                                    <i class="bi bi-hourglass-split"></i> 间隔监控
+                                </label>
+                                <div class="form-text ms-5 mb-2">每隔指定小时进行一次增量整理</div>
+                                <div class="ms-5 input-group w-50">
+                                    <input type="number" class="form-control" id="interval-hours" value="24" min="1" max="168">
+                                    <span class="input-group-text">小时</span>
+                                </div>
+                            </div>
                         </div>
                     </form>
                 </div>

@@ -9,6 +9,77 @@ class APIClient {
         this.reconnectTimeout = null;
         this.initWebSocket();
     }
+    
+    // 显示任务日志
+    showTaskLogs(taskId) {
+        try {
+            // 创建日志模态框
+            const logModal = document.createElement('div');
+            logModal.className = 'modal fade';
+            logModal.id = 'task-logs-modal';
+            logModal.tabIndex = -1;
+            logModal.innerHTML = `
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">
+                                <i class="bi bi-file-text"></i> 任务日志 - ID: ${taskId}
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="log-terminal" id="task-logs-content" style="height: 500px; overflow-y: auto; background-color: #f8f9fa; padding: 15px; font-family: monospace; white-space: pre-wrap;">
+                                <div class="text-muted text-center py-4">加载日志中...</div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(logModal);
+            
+            // 显示模态框
+            const modalInstance = new bootstrap.Modal(logModal);
+            modalInstance.show();
+            
+            // 加载日志
+            const logsContent = document.getElementById('task-logs-content');
+            
+            // 暂时使用模拟日志数据
+            // 实际应用中应该从API获取真实的任务日志
+            const mockLogs = [
+                `[${new Date().toLocaleString()}] 开始处理任务 ${taskId}`,
+                `[${new Date().toLocaleString()}] 扫描源路径: /mnt/user/strm-files`,
+                `[${new Date().toLocaleString()}] 发现 15 个 STRM 文件`,
+                `[${new Date().toLocaleString()}] 开始刮削文件: movie1.strm`,
+                `[${new Date().toLocaleString()}] 成功识别为电影: 星际穿越 (2014)`,
+                `[${new Date().toLocaleString()}] 生成元数据: movie1.nfo`,
+                `[${new Date().toLocaleString()}] 刮削完成: movie1.strm`,
+                `[${new Date().toLocaleString()}] 开始刮削文件: tvshow1.strm`,
+                `[${new Date().toLocaleString()}] 成功识别为电视剧: 绝命毒师 S01E01`,
+                `[${new Date().toLocaleString()}] 生成元数据: tvshow1.nfo`,
+                `[${new Date().toLocaleString()}] 刮削完成: tvshow1.strm`,
+                `[${new Date().toLocaleString()}] 任务处理完成，成功: 10, 失败: 0, 跳过: 5`
+            ];
+            
+            logsContent.innerHTML = mockLogs.join('\n');
+            logsContent.scrollTop = logsContent.scrollHeight;
+            
+            // 模态框关闭时清理
+            logModal.addEventListener('hidden.bs.modal', () => {
+                setTimeout(() => {
+                    logModal.remove();
+                }, 100);
+            });
+            
+        } catch (error) {
+            console.error('加载任务日志失败:', error);
+            this.api.showNotification('加载日志失败: ' + error.message, 'error');
+        }
+    }
 
     initWebSocket() {
         // 根据当前页面协议自动选择ws或wss
@@ -425,6 +496,7 @@ class PageManager {
     init() {
         this.setupNavigation();
         this.setupEventListeners();
+        this.setupPathFeatures(); // 初始化路径相关功能
         this.loadDashboard();
         this.startAutoRefresh();
     }
@@ -679,6 +751,11 @@ class PageManager {
     getTaskActionButtons(task) {
         const buttons = [];
         
+        // 为所有任务状态添加查看日志按钮
+        buttons.push(`<button class="btn btn-outline-info btn-sm" data-action="logs" title="查看日志">
+            <i class="bi bi-file-text me-1"></i>日志
+        </button>`);
+        
         switch (task.status) {
             case 'pending':
                 buttons.push(`<button class="btn btn-outline-success btn-sm" data-action="start">开始</button>`);
@@ -743,6 +820,9 @@ class PageManager {
                         this.api.showNotification('任务已删除', 'success');
                     }
                     break;
+                case 'logs':
+                    this.showTaskLogs(taskId);
+                    break;
             }
             
             // 刷新任务列表
@@ -752,16 +832,98 @@ class PageManager {
             this.api.showNotification(`操作失败: ${error.message}`, 'error');
         }
     }
+    
+    // 显示任务日志
+    showTaskLogs(taskId) {
+        try {
+            // 创建日志模态框
+            const logModal = document.createElement('div');
+            logModal.className = 'modal fade';
+            logModal.id = 'task-logs-modal';
+            logModal.tabIndex = -1;
+            logModal.innerHTML = `
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">
+                                <i class="bi bi-file-text"></i> 任务日志 - ID: ${taskId}
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="log-terminal" id="task-logs-content" style="height: 500px; overflow-y: auto; background-color: #f8f9fa; padding: 15px; font-family: monospace; white-space: pre-wrap;">
+                                <div class="text-muted text-center py-4">加载日志中...</div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(logModal);
+            
+            // 显示模态框
+            const modalInstance = new bootstrap.Modal(logModal);
+            modalInstance.show();
+            
+            // 加载日志
+            const logsContent = document.getElementById('task-logs-content');
+            
+            // 暂时使用模拟日志数据
+            // 实际应用中应该从API获取真实的任务日志
+            const mockLogs = [
+                `[${new Date().toLocaleString()}] 开始处理任务 ${taskId}`,
+                `[${new Date().toLocaleString()}] 扫描源路径: /mnt/user/strm-files`,
+                `[${new Date().toLocaleString()}] 发现 15 个 STRM 文件`,
+                `[${new Date().toLocaleString()}] 开始刮削文件: movie1.strm`,
+                `[${new Date().toLocaleString()}] 成功识别为电影: 星际穿越 (2014)`,
+                `[${new Date().toLocaleString()}] 生成元数据: movie1.nfo`,
+                `[${new Date().toLocaleString()}] 刮削完成: movie1.strm`,
+                `[${new Date().toLocaleString()}] 开始刮削文件: tvshow1.strm`,
+                `[${new Date().toLocaleString()}] 成功识别为电视剧: 绝命毒师 S01E01`,
+                `[${new Date().toLocaleString()}] 生成元数据: tvshow1.nfo`,
+                `[${new Date().toLocaleString()}] 刮削完成: tvshow1.strm`,
+                `[${new Date().toLocaleString()}] 任务处理完成，成功: 10, 失败: 0, 跳过: 5`
+            ];
+            
+            logsContent.innerHTML = mockLogs.join('\n');
+            logsContent.scrollTop = logsContent.scrollHeight;
+            
+            // 模态框关闭时清理
+            logModal.addEventListener('hidden.bs.modal', () => {
+                setTimeout(() => {
+                    logModal.remove();
+                }, 100);
+            });
+            
+        } catch (error) {
+            console.error('加载任务日志失败:', error);
+            this.api.showNotification('加载日志失败: ' + error.message, 'error');
+        }
+    }
 
     async createTask() {
         const form = document.getElementById('task-form');
-        const formData = new FormData(form);
         
+        // 获取表单数据
         const taskData = {
             name: document.getElementById('task-name').value,
+            description: document.getElementById('task-description').value,
             source_path: document.getElementById('source-path').value,
             destination_path: document.getElementById('destination-path').value,
-            organize_strategy: document.getElementById('organize-strategy').value
+            
+            // 整理模式
+            organize_mode: document.querySelector('input[name="organize-mode"]:checked').value,
+            
+            // 重命名设置
+            enable_rename: document.getElementById('enable-rename').checked,
+            
+            // 监控设置
+            monitor_type: document.querySelector('input[name="monitor-type"]:checked').value,
+            schedule_time: document.getElementById('schedule-time').value,
+            interval_hours: parseInt(document.getElementById('interval-hours').value)
         };
 
         try {
@@ -780,6 +942,58 @@ class PageManager {
         } catch (error) {
             console.error('创建任务失败:', error);
             this.api.showNotification(`创建任务失败: ${error.message}`, 'error');
+        }
+    }
+    
+    // 初始化路径检查和文件浏览功能
+    setupPathFeatures() {
+        // 路径粘贴检测
+        document.getElementById('source-path').addEventListener('input', this.checkPathMapping.bind(this));
+        
+        // 文件浏览按钮
+        document.getElementById('browse-source-btn').addEventListener('click', () => {
+            this.browseDirectory('source-path');
+        });
+        
+        document.getElementById('browse-dest-btn').addEventListener('click', () => {
+            this.browseDirectory('destination-path');
+        });
+    }
+    
+    // 检查路径映射
+    checkPathMapping() {
+        const sourcePath = document.getElementById('source-path').value;
+        const warningElement = document.getElementById('path-mapping-warning');
+        
+        // 简单的路径映射检查逻辑
+        // 实际应用中可能需要与后端API交互检查路径是否有效
+        if (sourcePath && (sourcePath.includes('/') || sourcePath.includes('\\'))) {
+            warningElement.classList.remove('d-none');
+        } else {
+            warningElement.classList.add('d-none');
+        }
+    }
+    
+    // 模拟目录浏览功能
+    browseDirectory(elementId) {
+        // 这里可以实现实际的目录浏览功能，或者调用后端API获取可用路径列表
+        // 暂时使用模拟数据
+        const mockPaths = [
+            '/mnt/user/media',
+            '/mnt/user/downloads',
+            '/mnt/user/strm-files',
+            '/media/share'
+        ];
+        
+        const inputElement = document.getElementById(elementId);
+        // 显示一个简单的选择对话框
+        const selectedPath = prompt('请选择或输入路径:\n' + mockPaths.join('\n'), inputElement.value);
+        
+        if (selectedPath) {
+            inputElement.value = selectedPath;
+            if (elementId === 'source-path') {
+                this.checkPathMapping();
+            }
         }
     }
 
