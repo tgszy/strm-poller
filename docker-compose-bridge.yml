@@ -9,7 +9,7 @@ services:
     container_name: strm-poller
     restart: unless-stopped
     ports:
-      - "127.0.0.1:35455:35455"  # 仅绑定到本地回环地址
+      - "0.0.0.0:35455:35455"  # 绑定到所有网络接口，支持外部访问
     volumes:
       - ./config:/config
       - ./src:/src:ro
@@ -22,10 +22,10 @@ services:
       - DOCKER_ENV=true
       - CUSTOM_BIND_IP=0.0.0.0
       
-      # 局域网代理IP配置（如需通过局域网代理访问外部服务）
-      # - LAN_PROXY_ENABLED=false
-      # - LAN_PROXY_IP=192.168.1.100  # 替换为实际的局域网代理服务器IP
-      # - LAN_PROXY_PORT=8080         # 替换为实际的代理端口
+      # 代理配置（如需使用）
+      # - PROXY_HTTP=http://proxy.example.com:8080
+      # - PROXY_HTTPS=https://proxy.example.com:8080
+      # - PROXY_TYPE=http
     mem_limit: 1g
     memswap_limit: 1g
     healthcheck:

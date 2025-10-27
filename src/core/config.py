@@ -165,7 +165,7 @@ class Settings(BaseSettings):
         config_files = [
             os.path.join(self.config_path, "config.yaml"),
             os.path.join(self.config_path, "config.yml"),
-            os.path.join(self.config_path, "config.json")  # 处理错误提示中的JSON文件
+            os.path.join(self.config_path, "config.json")
         ]
         
         for config_file in config_files:
@@ -183,11 +183,13 @@ class Settings(BaseSettings):
                         except ImportError:
                             logger.warning("PyYAML未安装，无法加载YAML配置")
                     elif config_file.endswith('.json'):
-                        # 即使使用JSON文件，也尝试优雅处理
-                        with open(config_file, 'r', encoding='utf-8') as f:
-                            config_data = json.load(f)
-                        logger.info(f"成功加载JSON配置文件: {config_file}")
-                        return config_data
+                        try:
+                            with open(config_file, 'r', encoding='utf-8') as f:
+                                config_data = json.load(f)
+                            logger.info(f"成功加载JSON配置文件: {config_file}")
+                            return config_data
+                        except Exception as e:
+                            logger.error(f"加载JSON配置文件 {config_file} 失败: {str(e)}")
                 except Exception as e:
                     logger.error(f"加载配置文件 {config_file} 失败: {str(e)}")
             else:
@@ -255,12 +257,36 @@ logging:
         try:
             super().__init__(**kwargs)
             
+            # 修复Windows环境下的路径问题，使用相对路径而不是绝对路径
+            # 首先检查当前工作目录
+            current_dir = os.getcwd()
+            
+            # 如果config_path是绝对路径且以\开头（Windows根目录），则修改为相对路径
+            if self.config_path.startswith('\\') or self.config_path.startswith('/'):
+                # 使用当前目录下的config文件夹
+                self.config_path = os.path.join(current_dir, 'config')
+                logger.info(f"修正配置路径为相对路径: {self.config_path}")
+            
+            # 同样处理其他路径
+            if self.src_path.startswith('\\') or self.src_path.startswith('/'):
+                self.src_path = os.path.join(current_dir, 'src')
+                logger.info(f"修正源路径为相对路径: {self.src_path}")
+            
+            if self.dst_path.startswith('\\') or self.dst_path.startswith('/'):
+                # 确保dst目录存在
+                self.dst_path = os.path.join(current_dir, 'dst')
+                os.makedirs(self.dst_path, exist_ok=True)
+                logger.info(f"修正目标路径为相对路径: {self.dst_path}")
+            
             # 确保路径使用正确的分隔符，支持Windows和Linux环境下的路径处理
             self.config_path = os.path.normpath(self.config_path)
             self.src_path = os.path.normpath(self.src_path)
             self.dst_path = os.path.normpath(self.dst_path)
             
             logger.info(f"配置路径设置: config_path={self.config_path}, src_path={self.src_path}, dst_path={self.dst_path}")
+            
+            # 确保配置目录存在
+            os.makedirs(self.config_path, exist_ok=True)
             
             # 更新依赖于config_path的路径，确保路径正确拼接
             self.sqlite_path = os.path.join(self.config_path, "strm-poller.db")
@@ -297,7 +323,7 @@ logging:
             # 使用默认值继续运行
             self.host = "0.0.0.0"
             self.port = 35455
-            self.config_path = os.environ.get("CONFIG_PATH", "/config")
+            self.config_path = os.path.join(os.getcwd(), 'config')
             self.src_path = os.environ.get("SRC_PATH", "/src")
             self.dst_path = os.environ.get("DST_PATH", "/dst")
             self.sqlite_path = os.path.join(self.config_path, "strm-poller.db")

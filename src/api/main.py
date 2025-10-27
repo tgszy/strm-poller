@@ -32,6 +32,130 @@ app = FastAPI(
     version="3.0.0"
 )
 
+async def check_scraper_status_on_startup():
+    """启动时检测刮削源状态"""
+    db = next(get_db())
+    try:
+        # 获取所有启用的刮削源配置
+        configs = db.query(ScraperConfig).filter(ScraperConfig.enabled == True).all()
+        
+        if not configs:
+            logger.info("没有启用的刮削源配置")
+            return
+            
+        logger.info(f"开始检测 {len(configs)} 个刮削源的状态...")
+        
+        # 统计检测结果
+        success_count = 0
+        warning_count = 0
+        error_count = 0
+        
+        for config in configs:
+            # 记录开始检测
+            logger.info(f"检测刮削源: {config.name} (优先级: {config.priority})")
+            
+            # 检查是否有必要的配置信息
+            if config.name == 'tmdb' and not config.api_key:
+                logger.warning(f"TMDB刮削源未配置API Key，请检查配置")
+                warning_count += 1
+                continue
+            elif config.name == 'douban' and not config.cookie:
+                logger.warning(f"豆瓣刮削源未配置Cookie，请检查配置")
+                warning_count += 1
+                continue
+            elif config.name == 'bangumi' and not config.api_key:
+                logger.warning(f"Bangumi刮削源未配置API Key，请检查配置")
+                warning_count += 1
+                continue
+            elif config.name == 'tvdb' and not config.api_key:
+                logger.warning(f"TVDB刮削源未配置API Key，请检查配置")
+                warning_count += 1
+                continue
+                
+            # 尝试连接刮削源
+            try:
+                # 构建测试请求
+                test_url = config.api_url if config.api_url else f"https://api.{config.name}.org"
+                logger.debug(f"刮削源 {config.name} 测试URL: {test_url}")
+                
+                # 使用代理管理器配置
+                proxy_url = None
+                if proxy_manager and proxy_manager.config.enabled:
+                    proxy_url = proxy_manager.config.get_proxy_url()
+                    logger.debug(f"使用代理: {proxy_url}")
+                else:
+                    logger.debug("未使用代理")
+                
+                # 创建测试会话
+                import aiohttp
+                timeout = aiohttp.ClientTimeout(total=10)
+                
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    headers = {}
+                    
+                    # 添加认证信息
+                    if config.api_key:
+                        if config.name == 'tmdb':
+                            headers['Authorization'] = f'Bearer {config.api_key}'
+                            logger.debug("添加TMDB认证头")
+                        elif config.name == 'bangumi':
+                            headers['Authorization'] = f'Bearer {config.api_key}'
+                            logger.debug("添加Bangumi认证头")
+                    
+                    # 尝试发送测试请求
+                    try:
+                        test_endpoint = f"{test_url}/configuration" if config.name == 'tmdb' else test_url
+                        logger.debug(f"发送测试请求到: {test_endpoint}")
+                        
+                        async with session.get(test_endpoint, headers=headers, proxy=proxy_url) as response:
+                            if response.status in [200, 401, 403]:
+                                # 200表示成功，401/403表示认证问题但连接正常
+                                logger.info(f"刮削源 {config.name} 连接成功 (状态码: {response.status})")
+                                success_count += 1
+                                
+                                # 记录详细信息
+                                if response.status == 200:
+                                    logger.info(f"✓ {config.name} - API连接正常")
+                                elif response.status == 401:
+                                    logger.warning(f"⚠ {config.name} - API认证失败，请检查API Key")
+                                elif response.status == 403:
+                                    logger.warning(f"⚠ {config.name} - API访问被拒绝，请检查权限")
+                            else:
+                                logger.warning(f"刮削源 {config.name} 连接异常 (状态码: {response.status})")
+                                warning_count += 1
+                                
+                    except asyncio.TimeoutError:
+                        logger.warning(f"刮削源 {config.name} 连接超时")
+                        warning_count += 1
+                    except Exception as e:
+                        logger.warning(f"刮削源 {config.name} 连接失败: {str(e)}")
+                        warning_count += 1
+                        
+            except Exception as e:
+                logger.error(f"检测刮削源 {config.name} 状态时出错: {str(e)}")
+                error_count += 1
+                
+    except Exception as e:
+        logger.error(f"刮削源状态检测过程中出错: {str(e)}")
+        error_count += 1
+    finally:
+        db.close()
+        
+    # 输出检测统计结果
+    logger.info(f"刮削源状态检测完成: 成功 {success_count} 个, 警告 {warning_count} 个, 错误 {error_count} 个")
+    
+    # 提供用户友好的提示信息
+    if warning_count > 0 or error_count > 0:
+        logger.info("部分刮削源存在问题，请检查以下配置:")
+        if warning_count > 0:
+            logger.info("- 检查API Key、Cookie等认证信息是否正确配置")
+            logger.info("- 检查网络连接和代理设置")
+        if error_count > 0:
+            logger.info("- 检查刮削源服务是否可用")
+            logger.info("- 查看详细错误日志以获取更多信息")
+    else:
+        logger.info("✓ 所有刮削源状态正常")
+
 # 全局管理器
 proxy_manager = None
 memory_manager = None
@@ -270,6 +394,49 @@ async def startup_event():
     # 获取设备的主要IP地址
     device_ip = get_device_ip_address()
     
+    # 从环境变量读取代理配置
+    proxy_http = os.environ.get("PROXY_HTTP")
+    proxy_https = os.environ.get("PROXY_HTTPS")
+    proxy_type = os.environ.get("PROXY_TYPE", "http")
+    
+    # 创建默认代理配置
+    proxy_config = ProxyConfig()
+    
+    # 如果配置了代理，则初始化代理配置
+    if proxy_http or proxy_https:
+        proxy_config.enabled = True
+        proxy_config.type = proxy_type
+        
+        # 尝试解析代理URL格式
+        import re
+        proxy_url = proxy_http or proxy_https
+        pattern = r'(?:https?|socks5)://(?:([^:@]+):([^:@]+)@)?([^:/]+):(\d+)'
+        match = re.match(pattern, proxy_url)
+        
+        if match:
+            username, password, host, port = match.groups()
+            proxy_config.host = host
+            proxy_config.port = int(port)
+            proxy_config.username = username
+            proxy_config.password = password
+            logger.info(f"从环境变量加载代理配置: {proxy_url}, TYPE={proxy_type}")
+        else:
+            # 如果无法解析URL格式，使用默认配置
+            logger.warning(f"环境变量代理配置格式错误: {proxy_url}")
+            proxy_config.enabled = False
+    else:
+        logger.info("未配置代理环境变量")
+    
+    # 初始化代理管理器
+    proxy_manager = ProxyManager(proxy_config)
+    
+    # 初始化内存管理器和资源监控器
+    memory_manager = MemoryManager()
+    resource_monitor = ResourceMonitor(memory_manager)
+    
+    # 启动时检测刮削源状态
+    await check_scraper_status_on_startup()
+    
     # 优化的静态文件路径列表，按优先级排序
     possible_paths = [
         Path(__file__).parent.parent / "static" / "index.html",  # 开发环境路径(优先级最高)
@@ -427,16 +594,19 @@ async def startup_event():
 async def read_root():
     """根路由 - 返回WebUI"""
     try:
-        # 尝试从静态目录读取index.html
-        static_dir = Path("./src/static")
+        # 尝试从静态目录读取index.html（使用绝对路径确保正确性）
+        base_dir = Path(__file__).parent.parent
+        static_dir = base_dir / "static"
         index_file = static_dir / "index.html"
         
         if index_file.exists() and index_file.is_file():
             with open(index_file, "r", encoding="utf-8") as f:
                 html_content = f.read()
             
-            # 修复脚本引用路径
+            # 修复静态文件引用路径
             html_content = html_content.replace('src="static/js/app.js"', 'src="/static/js/app.js"')
+            html_content = html_content.replace('src="static/bootstrap-local.js"', 'src="/static/bootstrap-local.js"')
+            html_content = html_content.replace('href="static/bootstrap-local.css"', 'href="/static/bootstrap-local.css"')
             
             return HTMLResponse(content=html_content)
         else:
@@ -587,17 +757,62 @@ async def update_proxy_config(config: ProxyConfigModel):
     """更新代理配置"""
     global proxy_manager
     
-    # 创建新的代理配置
-    proxy_config = ProxyConfig(
-        enabled=config.enabled,
-        type=config.type,
-        host=config.host,
-        port=config.port,
-        username=config.username,
-        password=config.password,
-        test_url=config.test_url,
-        timeout=config.timeout
-    )
+    # 检查环境变量中的代理配置，优先使用环境变量
+    proxy_http = os.environ.get("PROXY_HTTP")
+    proxy_https = os.environ.get("PROXY_HTTPS")
+    proxy_type = os.environ.get("PROXY_TYPE", "http")
+    
+    # 如果环境变量中有代理配置，则使用环境变量配置
+    if proxy_http or proxy_https:
+        # 解析环境变量中的代理配置
+        import re
+        
+        # 尝试从PROXY_HTTP或PROXY_HTTPS中提取主机和端口
+        proxy_url = proxy_http or proxy_https
+        
+        # 匹配代理URL格式：protocol://host:port 或 protocol://user:pass@host:port
+        pattern = r'(?:https?|socks5)://(?:([^:@]+):([^:@]+)@)?([^:/]+):(\d+)'
+        match = re.match(pattern, proxy_url)
+        
+        if match:
+            username, password, host, port = match.groups()
+            proxy_config = ProxyConfig(
+                enabled=True,
+                type=proxy_type,
+                host=host,
+                port=int(port),
+                username=username,
+                password=password,
+                test_url=config.test_url,
+                timeout=config.timeout
+            )
+            logger.info(f"从环境变量加载代理配置: {proxy_url}, TYPE={proxy_type}")
+        else:
+            # 如果无法解析环境变量，则使用API传入的配置
+            proxy_config = ProxyConfig(
+                enabled=config.enabled,
+                type=config.type,
+                host=config.host,
+                port=config.port,
+                username=config.username,
+                password=config.password,
+                test_url=config.test_url,
+                timeout=config.timeout
+            )
+            logger.info("环境变量代理配置格式错误，使用API配置")
+    else:
+        # 没有环境变量配置，使用API传入的配置
+        proxy_config = ProxyConfig(
+            enabled=config.enabled,
+            type=config.type,
+            host=config.host,
+            port=config.port,
+            username=config.username,
+            password=config.password,
+            test_url=config.test_url,
+            timeout=config.timeout
+        )
+        logger.info("未配置代理环境变量，使用API配置")
     
     # 重新初始化代理管理器
     if proxy_manager:
